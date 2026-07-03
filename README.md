@@ -10,18 +10,21 @@ A minimal Instagram client — Instagram without the fluff.
 
 ## Getting Started
 
-1. Copy `.env.example` to `.env` and fill in your credentials
-2. Run `docker compose up`
-3. Open [http://localhost:3000](http://localhost:3000)
+1. Run `docker compose up --build`
+2. Open [http://localhost:3000](http://localhost:3000) and log in with your Instagram username/password
+
+Your Instagram credentials are entered at login, not stored in `.env` — the app only holds a server-side session cookie after login.
 
 ## Development
 
 ```bash
 npm install
+cp .env.example .env
+docker compose up instagrapi
 npm run dev
 ```
 
-Requires the aiograpi-rest service running locally:
-```bash
-docker compose up instagrapi
-```
+## Known limitations (MVP)
+
+- No UI for Instagram checkpoint/challenge verification — if Instagram flags the login, you'll see an error asking you to log in via the official app first, then retry here.
+- 2FA (time-based one-time code) is supported: a code field appears after a first attempt that requires it.

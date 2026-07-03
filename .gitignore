@@ -7,6 +7,15 @@ node_modules/
 .next/
 out/
 build/
+next-env.d.ts
+*.tsbuildinfo
+
+# Testing
+/coverage
+
+# Vercel
+.vercel
+*.pem
 
 # Environment variables — never commit these
 .env
@@ -18,9 +27,6 @@ build/
 # Instagram session files — contain auth tokens
 sessions/
 *.session
-
-# Docker
-.dockerignore
 
 # OS
 .DS_Store

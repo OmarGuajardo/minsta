@@ -1,0 +1,23 @@
+services:
+  instagrapi:
+    image: ghcr.io/subzeroid/aiograpi-rest:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - AIOGRAPI_REST_DB_PATH=/data/db.json
+    volumes:
+      - instagrapi_data:/data
+    restart: unless-stopped
+
+  web:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - INSTAGRAPI_URL=http://instagrapi:8000
+    depends_on:
+      - instagrapi
+    restart: unless-stopped
+
+volumes:
+  instagrapi_data:
