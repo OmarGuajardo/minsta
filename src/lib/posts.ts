@@ -1,4 +1,4 @@
-import { getUserPosts } from "@/lib/instagrapi";
+import { getMyPosts as getGraphPosts } from "@/lib/instagram-graph";
 
 export interface Post {
   id: string;
@@ -12,16 +12,16 @@ export interface PostsPage {
   nextCursor: string;
 }
 
-export async function getMyPosts(sessionId: string, username: string, amount = 24): Promise<PostsPage> {
-  const page = await getUserPosts(sessionId, username, amount);
+export async function getMyPosts(accessToken: string, limit = 24, cursor?: string): Promise<PostsPage> {
+  const page = await getGraphPosts(accessToken, limit, cursor);
 
   return {
     items: page.items.map((media) => ({
       id: media.id,
-      imageUrl: media.thumbnail_url ?? media.image_versions2?.candidates?.[0]?.url ?? "",
-      caption: media.caption_text ?? "",
-      likeCount: media.like_count,
+      imageUrl: (media.media_type === "VIDEO" ? media.thumbnail_url : media.media_url) ?? media.media_url ?? "",
+      caption: media.caption ?? "",
+      likeCount: media.like_count ?? 0,
     })),
-    nextCursor: page.next_cursor,
+    nextCursor: page.nextCursor ?? "",
   };
 }

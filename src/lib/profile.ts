@@ -1,4 +1,4 @@
-import { getAccount, getUserByUsername } from "@/lib/instagrapi";
+import { getMyProfile as getGraphProfile } from "@/lib/instagram-graph";
 
 export interface Profile {
   username: string;
@@ -10,21 +10,16 @@ export interface Profile {
   mediaCount: number;
 }
 
-/**
- * `/account` only has identity fields; follower/following/media counts live
- * on `/user`, which requires already knowing the username.
- */
-export async function getMyProfile(sessionId: string): Promise<Profile> {
-  const account = await getAccount(sessionId);
-  const user = await getUserByUsername(sessionId, account.username);
+export async function getMyProfile(accessToken: string): Promise<Profile> {
+  const account = await getGraphProfile(accessToken);
 
   return {
     username: account.username,
-    fullName: account.full_name,
+    fullName: account.name ?? account.username,
     biography: account.biography ?? "",
-    profilePicUrl: user.profile_pic_url_hd ?? user.profile_pic_url ?? account.profile_pic_url,
-    followerCount: user.follower_count,
-    followingCount: user.following_count,
-    mediaCount: user.media_count,
+    profilePicUrl: account.profile_picture_url ?? "",
+    followerCount: account.followers_count ?? 0,
+    followingCount: account.follows_count ?? 0,
+    mediaCount: account.media_count ?? 0,
   };
 }
