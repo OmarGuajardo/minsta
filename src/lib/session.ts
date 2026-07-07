@@ -1,11 +1,11 @@
 import { cookies } from "next/headers";
 
-const SESSION_COOKIE = "ig_session";
-const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
+const SESSION_COOKIE = "ig_access_token";
+const SESSION_MAX_AGE = 60 * 60 * 24 * 60; // ~60 days, matching Instagram's long-lived token lifetime
 
-export async function setSessionCookie(sessionId: string) {
+export async function setSessionCookie(accessToken: string) {
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, sessionId, {
+  cookieStore.set(SESSION_COOKIE, accessToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
