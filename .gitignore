@@ -28,6 +28,12 @@ next-env.d.ts
 sessions/
 *.session
 
+# Python (instagrapi-service)
+instagrapi-service/.venv/
+instagrapi-service/__pycache__/
+instagrapi-service/**/__pycache__/
+instagrapi-service/data/
+
 # OS
 .DS_Store
 Thumbs.db

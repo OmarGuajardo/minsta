@@ -3,8 +3,8 @@ import { getSessionCookie } from "@/lib/session";
 import { CreatePostForm } from "@/components/CreatePostForm";
 
 export default async function NewPostPage() {
-  const accessToken = await getSessionCookie();
-  if (!accessToken) {
+  const sessionId = await getSessionCookie();
+  if (!sessionId) {
     redirect("/login");
   }
 

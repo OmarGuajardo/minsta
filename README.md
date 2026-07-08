@@ -5,47 +5,58 @@ A minimal Instagram client — Instagram without the fluff.
 ## Stack
 
 - **Frontend**: Next.js + TypeScript + Tailwind CSS
-- **Instagram API**: [Instagram API with Instagram Login](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login) (official Meta OAuth API)
+- **Instagram API**: [instagrapi](https://github.com/subzeroid/instagrapi) (private/unofficial API), via a small custom FastAPI sidecar (`instagrapi-service/`)
 - **Packaging**: Docker Compose
 
-## Setup
+## Why the private API, and why this is risky
 
-Instagram's official API requires some one-time setup in Meta's developer dashboard:
+minsta previously used Meta's official "Instagram API with Instagram Login," but that API has no way to read posts from accounts you follow — it's scoped entirely to managing your own connected account, not consuming other people's content. Since minsta's whole point is a feed of people you follow (deliberately **no** explore/algorithmic content), that's a hard capability gap the official API can't close.
 
-1. Create a Meta app at [developers.facebook.com/apps](https://developers.facebook.com/apps) (type: Business), and add the **Instagram** product → "API setup with Instagram Login".
-2. Convert the target Instagram account to **Professional** (Business or Creator): Instagram app → Settings → Account type.
-3. Add that account as an **Instagram tester** under the app's Instagram product page, and accept the tester invite from inside the Instagram app (Settings → Apps and websites → Tester invites). This is what unlocks Standard Access with no App Review needed.
-4. Copy the **Instagram App ID** and **Instagram App Secret** from the Instagram product's setup page.
-5. Register a redirect URI in "Valid OAuth Redirect URIs": `<your-https-url>/api/auth/instagram/callback`. This must be HTTPS and publicly reachable — for local dev, run `ngrok http 3000` and use the generated `https://*.ngrok-free.app` (or `.dev`) URL. Note: free ngrok URLs change on restart, so you'll need to update this each time unless you have a static domain.
+This version uses `instagrapi` instead, which talks to Instagram's actual private mobile-app API. That means:
+
+- **This is against Instagram's Terms of Service.** Using it is a real risk to the account's standing, not just a technical inconvenience.
+- Password-based login gets reliably blocked by Instagram's fraud detection (every login looks like a brand-new device). The workaround is logging in via a real Instagram **`sessionid` cookie** extracted from an already-authenticated browser session, which sidesteps the flagged login endpoint entirely.
+- Session state (device fingerprint + auth cookies) is persisted server-side per session and reused on every request — never regenerated per-call, which is what made the original approach unreliable.
+
+## Getting your sessionid
+
+1. Log into [instagram.com](https://instagram.com) normally in a browser (handles 2FA fine — this is the lenient web login path, not the flagged private-API one).
+2. Open dev tools → Application (Chrome/Edge) or Storage (Firefox) → Cookies → `instagram.com`.
+3. Copy the value of the `sessionid` cookie. Treat it like a password.
 
 ## Getting Started
 
 ```bash
 cp .env.example .env
-# fill in INSTAGRAM_APP_ID, INSTAGRAM_APP_SECRET, INSTAGRAM_REDIRECT_URI
-
 docker compose up --build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) (or your ngrok URL) and click "Connect Instagram" to authorize via Instagram's own login page.
-
-Your Instagram credentials are never seen by this app — Instagram handles login and 2FA on its own domain, and hands minsta back an access token, which is stored server-side in a session cookie.
-
-## Posting
-
-The "New post" button (`/post/new`) uploads a JPEG and a caption, then publishes it to the connected Instagram account via the Content Publishing API. Since Instagram's publish API fetches the image from a public URL rather than accepting a direct upload, the server temporarily hosts the uploaded file at `/api/uploads/:id` (reachable through your ngrok tunnel in dev) and deletes it once publishing finishes.
-
-Posting requires the `instagram_business_content_publish` scope — if you connected before this feature was added, click "Log out" and "Connect Instagram" again to re-authorize with the new scope.
+Open [http://localhost:3000](http://localhost:3000), paste your `sessionid` on the login page.
 
 ## Development
 
 ```bash
 npm install
 cp .env.example .env
+docker compose up instagrapi
 npm run dev
 ```
 
+The Python service also runs standalone without Docker, if preferred:
+
+```bash
+cd instagrapi-service
+python3.12 -m venv .venv   # a Python version with prebuilt wheels for instagrapi's C-extension deps
+.venv/bin/pip install -r requirements.txt
+INSTAGRAPI_DATA_DIR=./data .venv/bin/uvicorn main:app --reload
+```
+
+## Feed design
+
+`/feed` is deliberately built from `user_following()` + `user_medias()` per followed account, not instagrapi's `get_timeline_feed()` — the latter is Instagram's own ranked home feed, which mixes in suggested/explore-adjacent content. Each feed item shows exactly: the photo, the poster's username, their profile picture, and a few recent comments — nothing else.
+
 ## Known limitations (MVP)
 
-- No token-refresh automation — long-lived access tokens last 60 days and are refreshable after 24 hours, but minsta doesn't yet refresh them proactively. Reconnecting via "Connect Instagram" gets a fresh token.
-- Standard Access only supports the connected account itself — no arbitrary username lookups (minsta only ever shows the logged-in user's own profile and posts, so this isn't a functional gap today).
+- No UI for Instagram checkpoint/challenge verification.
+- Comments are fetched per post sequentially (not in parallel) to stay gentle on rate limits, so `/feed` can be slow to load for accounts following many people.
+- `sessionid` cookies aren't permanent — when Instagram invalidates it, you'll need to re-extract a fresh one from your browser and log in again.

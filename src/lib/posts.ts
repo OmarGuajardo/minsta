@@ -1,4 +1,5 @@
-import { getMyPosts as getGraphPosts } from "@/lib/instagram-graph";
+import { getUserPosts } from "@/lib/instagrapi";
+import type { Media } from "@/lib/instagrapi";
 
 export interface Post {
   id: string;
@@ -7,35 +8,22 @@ export interface Post {
   likeCount: number;
 }
 
-export interface PostsPage {
-  items: Post[];
-  nextCursor: string;
-}
-
-export async function getMyPosts(accessToken: string, limit = 24, cursor?: string): Promise<PostsPage> {
-  const page = await getGraphPosts(accessToken, limit, cursor);
-
+function toPost(media: Media): Post {
   return {
-    items: page.items.map((media) => ({
-      id: media.id,
-      imageUrl: (media.media_type === "VIDEO" ? media.thumbnail_url : media.media_url) ?? media.media_url ?? "",
-      caption: media.caption ?? "",
-      likeCount: media.like_count ?? 0,
-    })),
-    nextCursor: page.nextCursor ?? "",
+    id: media.id,
+    imageUrl: media.thumbnail_url ?? media.image_versions2?.candidates?.[0]?.url ?? "",
+    caption: media.caption_text ?? "",
+    likeCount: media.like_count,
   };
 }
 
-/** Fetches every page of the account's posts, following cursors until exhausted. */
-export async function getAllMyPosts(accessToken: string): Promise<Post[]> {
-  const items: Post[] = [];
-  let cursor: string | undefined;
+export async function getMyPosts(sessionId: string, username: string, amount = 24): Promise<Post[]> {
+  const page = await getUserPosts(sessionId, username, amount);
+  return page.items.map(toPost);
+}
 
-  do {
-    const page = await getMyPosts(accessToken, 24, cursor);
-    items.push(...page.items);
-    cursor = page.nextCursor || undefined;
-  } while (cursor);
-
-  return items;
+/** Fetches every post on the account — instagrapi's amount=0 means "no limit", so no manual pagination loop is needed here. */
+export async function getAllMyPosts(sessionId: string, username: string): Promise<Post[]> {
+  const page = await getUserPosts(sessionId, username, 0);
+  return page.items.map(toPost);
 }

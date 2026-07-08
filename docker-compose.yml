@@ -1,8 +1,23 @@
 services:
+  instagrapi:
+    build: ./instagrapi-service
+    ports:
+      - "8000:8000"
+    environment:
+      - INSTAGRAPI_DATA_DIR=/data
+    volumes:
+      - instagrapi_data:/data
+    restart: unless-stopped
+
   web:
     build: .
     ports:
       - "3000:3000"
-    env_file:
-      - .env
+    environment:
+      - INSTAGRAPI_URL=http://instagrapi:8000
+    depends_on:
+      - instagrapi
     restart: unless-stopped
+
+volumes:
+  instagrapi_data:
