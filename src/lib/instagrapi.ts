@@ -37,7 +37,7 @@ function classifyError(status: number, body: UpstreamErrorBody | undefined): Ins
 interface InstagrapiFetchOptions {
   method?: "GET" | "POST";
   sessionId?: string;
-  searchParams?: Record<string, string | number | undefined>;
+  searchParams?: Record<string, string | number | boolean | undefined>;
   form?: Record<string, string | undefined>;
 }
 
@@ -178,10 +178,15 @@ export function getUserPosts(sessionId: string, username: string, amount: number
 }
 
 /** Feed built only from accounts the logged-in user follows — see instagrapi-service's /feed for why this isn't the algorithmic timeline. */
-export function getFeed(sessionId: string, peopleLimit = 30, perUser = 2): Promise<{ items: FeedItem[] }> {
+export function getFeed(
+  sessionId: string,
+  peopleLimit = 30,
+  perUser = 2,
+  forceRefresh = false
+): Promise<{ items: FeedItem[] }> {
   return instagrapiFetch<{ items: FeedItem[] }>("/feed", {
     sessionId,
-    searchParams: { people_limit: peopleLimit, per_user: perUser },
+    searchParams: { people_limit: peopleLimit, per_user: perUser, force_refresh: forceRefresh },
   });
 }
 
