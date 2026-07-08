@@ -122,6 +122,13 @@ export interface User {
   biography?: string;
 }
 
+export interface MediaResource {
+  pk: string;
+  video_url?: string;
+  thumbnail_url?: string;
+  media_type: number;
+}
+
 export interface Media {
   pk: string;
   id: string;
@@ -130,6 +137,7 @@ export interface Media {
   media_type: number;
   image_versions2?: { candidates: Array<{ url: string; width: number; height: number }> };
   thumbnail_url?: string;
+  resources: MediaResource[];
   user: UserShort;
   comment_count?: number;
   like_count: number;
