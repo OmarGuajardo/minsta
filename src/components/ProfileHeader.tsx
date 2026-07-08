@@ -1,15 +1,16 @@
 import type { Profile } from "@/lib/profile";
+import { proxiedImageUrl } from "@/lib/image-proxy";
 
 export function ProfileHeader({ profile }: { profile: Profile }) {
   return (
     <div className="flex items-center gap-6">
       {/* eslint-disable-next-line @next/next/no-img-element -- Instagram CDN hostnames rotate, so next/image remotePatterns can't be pinned reliably */}
       <img
-        src={profile.profilePicUrl}
+        src={proxiedImageUrl(profile.profilePicUrl)}
         alt={`${profile.username}'s profile picture`}
         width={96}
         height={96}
-        className="h-24 w-24 rounded-full object-cover"
+        className="h-24 w-24 shrink-0 rounded-full object-cover"
       />
       <div className="flex flex-col gap-2">
         <h1 className="text-xl font-semibold">@{profile.username}</h1>

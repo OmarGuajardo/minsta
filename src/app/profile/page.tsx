@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { InstagramApiError } from "@/lib/instagram-graph";
+import { InstagrapiError } from "@/lib/instagrapi";
 import { getMyProfile } from "@/lib/profile";
 import { getAllMyPosts } from "@/lib/posts";
 import { clearSessionCookie, getSessionCookie } from "@/lib/session";
@@ -9,18 +9,18 @@ import { PhotoGrid } from "@/components/PhotoGrid";
 import { LogoutButton } from "@/components/LogoutButton";
 
 export default async function ProfilePage() {
-  const accessToken = await getSessionCookie();
-  if (!accessToken) {
+  const sessionId = await getSessionCookie();
+  if (!sessionId) {
     redirect("/login");
   }
 
   let profile;
   let posts;
   try {
-    profile = await getMyProfile(accessToken);
-    posts = await getAllMyPosts(accessToken);
+    profile = await getMyProfile(sessionId);
+    posts = await getAllMyPosts(sessionId, profile.username);
   } catch (err) {
-    if (err instanceof InstagramApiError && err.code === "not_authenticated") {
+    if (err instanceof InstagrapiError && err.code === "not_authenticated") {
       await clearSessionCookie();
       redirect("/login");
     }
@@ -32,6 +32,9 @@ export default async function ProfilePage() {
       <div className="flex items-start justify-between">
         <ProfileHeader profile={profile} />
         <div className="flex items-center gap-2">
+          <Link href="/feed" className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15">
+            Feed
+          </Link>
           <Link
             href="/post/new"
             className="rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background"

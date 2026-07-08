@@ -1,23 +1,27 @@
 import { NextResponse } from "next/server";
-import { InstagramApiError } from "@/lib/instagram-graph";
+import { InstagrapiError } from "@/lib/instagrapi";
 import { getMyPosts } from "@/lib/posts";
 import { clearSessionCookie, getSessionCookie } from "@/lib/session";
 
 export async function GET(request: Request) {
-  const accessToken = await getSessionCookie();
-  if (!accessToken) {
+  const sessionId = await getSessionCookie();
+  if (!sessionId) {
     return NextResponse.json({ error: "Not authenticated.", code: "not_authenticated" }, { status: 401 });
   }
 
   const { searchParams } = new URL(request.url);
-  const limit = Number(searchParams.get("limit") ?? 24);
-  const cursor = searchParams.get("cursor") ?? undefined;
+  const username = searchParams.get("username");
+  const amount = Number(searchParams.get("amount") ?? 24);
+
+  if (!username) {
+    return NextResponse.json({ error: "username query param is required.", code: "unknown" }, { status: 400 });
+  }
 
   try {
-    const posts = await getMyPosts(accessToken, limit, cursor);
-    return NextResponse.json(posts);
+    const posts = await getMyPosts(sessionId, username, amount);
+    return NextResponse.json({ items: posts });
   } catch (err) {
-    if (err instanceof InstagramApiError) {
+    if (err instanceof InstagrapiError) {
       if (err.code === "not_authenticated") await clearSessionCookie();
       return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
     }
