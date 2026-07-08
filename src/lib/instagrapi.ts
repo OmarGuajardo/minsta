@@ -1,6 +1,11 @@
 const DEFAULT_BASE_URL = "http://localhost:8000";
 
-export type InstagrapiErrorCode = "not_authenticated" | "login_failed" | "rate_limited" | "unknown";
+export type InstagrapiErrorCode =
+  | "not_authenticated"
+  | "login_failed"
+  | "rate_limited"
+  | "challenge_required"
+  | "unknown";
 
 export class InstagrapiError extends Error {
   status: number;
@@ -29,7 +34,10 @@ function classifyError(status: number, body: UpstreamErrorBody | undefined): Ins
     );
   }
   if (status === 429 || body?.exc_type === "RateLimitError" || body?.exc_type === "PleaseWaitFewMinutes") {
-    return new InstagrapiError(status, "rate_limited", "Too many requests to Instagram — please try again later.");
+    return new InstagrapiError(status, "rate_limited", detail);
+  }
+  if (status === 403) {
+    return new InstagrapiError(status, "challenge_required", detail);
   }
   return new InstagrapiError(status, "unknown", detail);
 }
@@ -137,6 +145,7 @@ export interface Media {
   media_type: number;
   image_versions2?: { candidates: Array<{ url: string; width: number; height: number }> };
   thumbnail_url?: string;
+  video_url?: string;
   resources: MediaResource[];
   user: UserShort;
   comment_count?: number;

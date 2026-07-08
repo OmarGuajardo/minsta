@@ -1,32 +1,47 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { InstagrapiError } from "@/lib/instagrapi";
-import { getMyFeed } from "@/lib/feed";
+import { getMyFeed, type FeedPost } from "@/lib/feed";
 import { clearSessionCookie, getSessionCookie } from "@/lib/session";
 import { FeedList } from "@/components/FeedList";
+
+const RANGE_OPTIONS = [
+  { key: "1w", label: "1 week", days: 7 },
+  { key: "2w", label: "2 weeks", days: 14 },
+  { key: "1m", label: "1 month", days: 30 },
+];
+const DEFAULT_RANGE_KEY = "1w";
 
 export default async function FeedPage({
   searchParams,
 }: {
-  searchParams: Promise<{ refresh?: string }>;
+  searchParams: Promise<{ refresh?: string; range?: string }>;
 }) {
   const sessionId = await getSessionCookie();
   if (!sessionId) {
     redirect("/login");
   }
 
-  const { refresh } = await searchParams;
+  const { refresh, range } = await searchParams;
   const forceRefresh = refresh === "1";
+  const selectedOption =
+    RANGE_OPTIONS.find((option) => option.key === range) ??
+    RANGE_OPTIONS.find((option) => option.key === DEFAULT_RANGE_KEY)!;
 
-  let posts;
+  let posts: FeedPost[] = [];
+  let errorMessage: string | null = null;
   try {
-    posts = await getMyFeed(sessionId, forceRefresh);
+    posts = await getMyFeed(sessionId, forceRefresh, selectedOption.days);
   } catch (err) {
     if (err instanceof InstagrapiError && err.code === "not_authenticated") {
       await clearSessionCookie();
       redirect("/login");
     }
-    throw err;
+    if (err instanceof InstagrapiError && (err.code === "challenge_required" || err.code === "rate_limited")) {
+      errorMessage = err.message;
+    } else {
+      throw err;
+    }
   }
 
   return (
@@ -35,7 +50,7 @@ export default async function FeedPage({
         <h1 className="text-2xl font-semibold">Feed</h1>
         <div className="flex items-center gap-2">
           <Link
-            href="/feed?refresh=1"
+            href={`/feed?range=${selectedOption.key}&refresh=1`}
             className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15"
           >
             Refresh
@@ -45,7 +60,28 @@ export default async function FeedPage({
           </Link>
         </div>
       </div>
-      <FeedList posts={posts} />
+
+      <div className="flex gap-2">
+        {RANGE_OPTIONS.map((option) => (
+          <Link
+            key={option.key}
+            href={`/feed?range=${option.key}`}
+            className={
+              option.key === selectedOption.key
+                ? "rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background"
+                : "rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15"
+            }
+          >
+            {option.label}
+          </Link>
+        ))}
+      </div>
+
+      {errorMessage ? (
+        <p className="text-sm text-red-600 dark:text-red-400">{errorMessage}</p>
+      ) : (
+        <FeedList posts={posts} />
+      )}
     </main>
   );
 }
