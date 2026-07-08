@@ -25,3 +25,17 @@ export async function getMyPosts(accessToken: string, limit = 24, cursor?: strin
     nextCursor: page.nextCursor ?? "",
   };
 }
+
+/** Fetches every page of the account's posts, following cursors until exhausted. */
+export async function getAllMyPosts(accessToken: string): Promise<Post[]> {
+  const items: Post[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const page = await getMyPosts(accessToken, 24, cursor);
+    items.push(...page.items);
+    cursor = page.nextCursor || undefined;
+  } while (cursor);
+
+  return items;
+}
