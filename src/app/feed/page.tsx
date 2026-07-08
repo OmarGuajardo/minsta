@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { InstagrapiError } from "@/lib/instagrapi";
-import { getMyFeed } from "@/lib/feed";
+import { getMyFeed, type FeedPost } from "@/lib/feed";
 import { clearSessionCookie, getSessionCookie } from "@/lib/session";
 import { FeedList } from "@/components/FeedList";
 
@@ -28,7 +28,8 @@ export default async function FeedPage({
     RANGE_OPTIONS.find((option) => option.key === range) ??
     RANGE_OPTIONS.find((option) => option.key === DEFAULT_RANGE_KEY)!;
 
-  let posts;
+  let posts: FeedPost[] = [];
+  let errorMessage: string | null = null;
   try {
     posts = await getMyFeed(sessionId, forceRefresh, selectedOption.days);
   } catch (err) {
@@ -36,7 +37,11 @@ export default async function FeedPage({
       await clearSessionCookie();
       redirect("/login");
     }
-    throw err;
+    if (err instanceof InstagrapiError && (err.code === "challenge_required" || err.code === "rate_limited")) {
+      errorMessage = err.message;
+    } else {
+      throw err;
+    }
   }
 
   return (
@@ -72,7 +77,11 @@ export default async function FeedPage({
         ))}
       </div>
 
-      <FeedList posts={posts} />
+      {errorMessage ? (
+        <p className="text-sm text-red-600 dark:text-red-400">{errorMessage}</p>
+      ) : (
+        <FeedList posts={posts} />
+      )}
     </main>
   );
 }
