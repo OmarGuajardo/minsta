@@ -1,5 +1,6 @@
 import type { FeedPost } from "@/lib/feed";
 import { proxiedImageUrl } from "@/lib/image-proxy";
+import { ImageCarousel } from "@/components/ImageCarousel";
 
 function formatTimestamp(timestamp: string): string {
   return new Date(timestamp).toLocaleDateString(undefined, { year: "numeric", month: "2-digit", day: "2-digit" });
@@ -25,8 +26,7 @@ export function FeedList({ posts }: { posts: FeedPost[] }) {
             <span className="text-xs text-black/50 dark:text-white/50">{formatTimestamp(post.timestamp)}</span>
           </div>
 
-          {/* eslint-disable-next-line @next/next/no-img-element -- Instagram CDN hostnames rotate, so next/image remotePatterns can't be pinned reliably */}
-          <img src={post.imageUrl} alt={`Post by ${post.username}`} className="aspect-square w-full object-cover" />
+          <ImageCarousel imageUrls={post.imageUrls} alt={`Post by ${post.username}`} />
 
           {post.caption && (
             <p className="text-sm">
