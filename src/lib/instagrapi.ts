@@ -137,6 +137,7 @@ export interface Media {
   media_type: number;
   image_versions2?: { candidates: Array<{ url: string; width: number; height: number }> };
   thumbnail_url?: string;
+  video_url?: string;
   resources: MediaResource[];
   user: UserShort;
   comment_count?: number;

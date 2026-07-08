@@ -1,6 +1,6 @@
 import type { FeedPost } from "@/lib/feed";
 import { proxiedImageUrl } from "@/lib/image-proxy";
-import { ImageCarousel } from "@/components/ImageCarousel";
+import { MediaCarousel } from "@/components/MediaCarousel";
 
 function formatTimestamp(timestamp: string): string {
   return new Date(timestamp).toLocaleDateString(undefined, { year: "numeric", month: "2-digit", day: "2-digit" });
@@ -26,7 +26,7 @@ export function FeedList({ posts }: { posts: FeedPost[] }) {
             <span className="text-xs text-black/50 dark:text-white/50">{formatTimestamp(post.timestamp)}</span>
           </div>
 
-          <ImageCarousel imageUrls={post.imageUrls} alt={`Post by ${post.username}`} />
+          <MediaCarousel items={post.media} alt={`Post by ${post.username}`} />
 
           {post.caption && (
             <p className="text-sm">
