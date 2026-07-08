@@ -31,6 +31,12 @@ Open [http://localhost:3000](http://localhost:3000) (or your ngrok URL) and clic
 
 Your Instagram credentials are never seen by this app — Instagram handles login and 2FA on its own domain, and hands minsta back an access token, which is stored server-side in a session cookie.
 
+## Posting
+
+The "New post" button (`/post/new`) uploads a JPEG and a caption, then publishes it to the connected Instagram account via the Content Publishing API. Since Instagram's publish API fetches the image from a public URL rather than accepting a direct upload, the server temporarily hosts the uploaded file at `/api/uploads/:id` (reachable through your ngrok tunnel in dev) and deletes it once publishing finishes.
+
+Posting requires the `instagram_business_content_publish` scope — if you connected before this feature was added, click "Log out" and "Connect Instagram" again to re-authorize with the new scope.
+
 ## Development
 
 ```bash

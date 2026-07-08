@@ -2,25 +2,13 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { InstagramApiError, exchangeCodeForToken, exchangeForLongLivedToken } from "@/lib/instagram-graph";
 import { setSessionCookie } from "@/lib/session";
+import { getRequestOrigin } from "@/lib/request-origin";
 
 const STATE_COOKIE = "ig_oauth_state";
 
-// Behind an ngrok tunnel (or any reverse proxy), request.url reflects the
-// dev server's local bind address, not the public host the browser is on —
-// so redirects must be built from the forwarded host/proto instead.
-function getOrigin(request: Request, requestUrl: URL): string {
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  const forwardedProto = request.headers.get("x-forwarded-proto");
-  if (forwardedHost) {
-    return `${forwardedProto ?? "https"}://${forwardedHost}`;
-  }
-  return requestUrl.origin;
-}
-
 export async function GET(request: Request) {
-  const requestUrl = new URL(request.url);
-  const { searchParams } = requestUrl;
-  const origin = getOrigin(request, requestUrl);
+  const { searchParams } = new URL(request.url);
+  const origin = getRequestOrigin(request);
   const error = searchParams.get("error");
   const code = searchParams.get("code");
   const state = searchParams.get("state");

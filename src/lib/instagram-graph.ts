@@ -29,7 +29,7 @@ export function getAuthorizationUrl(state: string): string {
   url.searchParams.set("client_id", requireEnv("INSTAGRAM_APP_ID"));
   url.searchParams.set("redirect_uri", requireEnv("INSTAGRAM_REDIRECT_URI"));
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", "instagram_business_basic");
+  url.searchParams.set("scope", "instagram_business_basic,instagram_business_content_publish");
   url.searchParams.set("state", state);
   return url.toString();
 }
@@ -116,6 +116,27 @@ async function graphFetch<T>(path: string, accessToken: string, params: Record<s
   return (await res.json()) as T;
 }
 
+async function graphPost<T>(path: string, accessToken: string, params: Record<string, string>): Promise<T> {
+  const body = new URLSearchParams({ ...params, access_token: accessToken });
+  const res = await fetch(`${GRAPH_HOST}/${GRAPH_API_VERSION}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    let errorBody: GraphErrorBody | undefined;
+    try {
+      errorBody = await res.json();
+    } catch {
+      // non-JSON error body, fall through to generic classification
+    }
+    throw classifyGraphError(res.status, errorBody);
+  }
+  return (await res.json()) as T;
+}
+
 function classifyGraphError(status: number, body: GraphErrorBody | undefined): InstagramApiError {
   const message = body?.error?.message ?? `Request failed with status ${status}`;
   // Error code 190 is Graph API's standard "invalid/expired access token" code.
@@ -181,4 +202,35 @@ export async function getMyPosts(accessToken: string, limit = 24, cursor?: strin
     items: body.data,
     nextCursor: body.paging?.cursors?.after,
   };
+}
+
+export type ContainerStatus = "EXPIRED" | "ERROR" | "FINISHED" | "IN_PROGRESS" | "PUBLISHED";
+
+/** Creates a media container from a publicly-reachable JPEG URL. Returns the container id. */
+export async function createMediaContainer(
+  accessToken: string,
+  igUserId: string,
+  imageUrl: string,
+  caption: string
+): Promise<string> {
+  const body = await graphPost<{ id: string }>(`/${igUserId}/media`, accessToken, {
+    image_url: imageUrl,
+    caption,
+  });
+  return body.id;
+}
+
+export async function getContainerStatus(accessToken: string, containerId: string): Promise<ContainerStatus> {
+  const body = await graphFetch<{ status_code: ContainerStatus }>(`/${containerId}`, accessToken, {
+    fields: "status_code",
+  });
+  return body.status_code;
+}
+
+/** Publishes a FINISHED media container. Returns the published media id. */
+export async function publishMediaContainer(accessToken: string, igUserId: string, containerId: string): Promise<string> {
+  const body = await graphPost<{ id: string }>(`/${igUserId}/media_publish`, accessToken, {
+    creation_id: containerId,
+  });
+  return body.id;
 }
