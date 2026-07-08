@@ -1,6 +1,7 @@
 import logging
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -14,6 +15,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("instagrapi-service")
 
 app = FastAPI(title="minsta instagrapi service")
+
+# /feed re-fetches the following list on every call (cheap, one call) so
+# unfollows/follows are never stale — only each account's own posts are
+# cached, since that's the expensive part (one call per followed account,
+# each paced by delay_range).
+USER_MEDIA_CACHE_TTL_SECONDS = 300
+_user_media_cache: dict[tuple[str, str, int], tuple[float, list]] = {}
 
 
 @app.exception_handler(Exception)
@@ -95,7 +103,12 @@ def user_posts(username: str, amount: int = 24, client_and_id: tuple = Depends(g
 
 
 @app.get("/feed")
-def feed(people_limit: int = 30, per_user: int = 2, client_and_id: tuple = Depends(get_client)):
+def feed(
+    people_limit: int = 30,
+    per_user: int = 2,
+    force_refresh: bool = False,
+    client_and_id: tuple = Depends(get_client),
+):
     """Aggregated feed built only from accounts the logged-in user follows.
 
     Deliberately NOT instagrapi's get_timeline_feed() — that's Instagram's own
@@ -104,15 +117,25 @@ def feed(people_limit: int = 30, per_user: int = 2, client_and_id: tuple = Depen
     account so it's strictly limited to people actually followed.
     """
     cl, session_id = client_and_id
+
+    # Always fetched fresh — this is one cheap call, and caching it was what
+    # made unfollows/follows invisible until the whole feed cache expired.
     following = cl.user_following(cl.user_id, amount=people_limit)
 
     items = []
     for followed_user_id, user_short in following.items():
-        try:
-            medias = cl.user_medias(followed_user_id, per_user)
-        except Exception:
-            logger.warning("Skipping %s in feed — media fetch failed", user_short.username, exc_info=True)
-            continue
+        media_cache_key = (session_id, followed_user_id, per_user)
+        cached = _user_media_cache.get(media_cache_key)
+        if not force_refresh and cached and (time.time() - cached[0]) < USER_MEDIA_CACHE_TTL_SECONDS:
+            medias = cached[1]
+        else:
+            try:
+                medias = cl.user_medias(followed_user_id, per_user)
+            except Exception:
+                logger.warning("Skipping %s in feed — media fetch failed", user_short.username, exc_info=True)
+                continue
+            _user_media_cache[media_cache_key] = (time.time(), medias)
+
         for media in medias:
             items.append({"media": media, "user": user_short})
 
