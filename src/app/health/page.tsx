@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { getRequestBudgetStatus, getRotationStatus } from "@/lib/instagrapi";
-import { getSessionCookie } from "@/lib/session";
+import { catchAuthError, requireSessionId } from "@/lib/require-session";
 import { FollowedAccountsTable } from "@/components/FollowedAccountsTable";
 
 function UsageBar({ used, limit }: { used: number; limit: number }) {
@@ -14,14 +13,11 @@ function UsageBar({ used, limit }: { used: number; limit: number }) {
 }
 
 export default async function HealthPage() {
-  const sessionId = await getSessionCookie();
-  if (!sessionId) {
-    redirect("/login");
-  }
+  const sessionId = await requireSessionId();
 
   const [{ request_budget: budget }, { items: rotation }] = await Promise.all([
     getRequestBudgetStatus(),
-    getRotationStatus(sessionId),
+    catchAuthError(() => getRotationStatus(sessionId)),
   ]);
 
   return (
@@ -34,6 +30,9 @@ export default async function HealthPage() {
           </Link>
           <Link href="/profile" className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15">
             Profile
+          </Link>
+          <Link href="/admin" className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15">
+            Admin
           </Link>
         </div>
       </div>

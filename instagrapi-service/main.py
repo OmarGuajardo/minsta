@@ -9,6 +9,14 @@ from typing import Optional
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from instagrapi import Client
+from instagrapi.exceptions import (
+    ChallengeRequired,
+    ClientLoginRequired,
+    LoginRequired,
+    PleaseWaitFewMinutes,
+    RateLimitError,
+)
+from pydantic import BaseModel, Field
 
 import db
 import poller
@@ -17,6 +25,12 @@ import storage
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("instagrapi-service")
+
+# instagrapi raises these when a previously-valid session stops working
+# mid-use (Instagram revoked/expired it) — as opposed to get_client's 401,
+# which fires when there's no local session at all. Both need to reach the
+# frontend as the same "not_authenticated" signal so it can prompt a re-login.
+SESSION_INVALID_EXCEPTIONS = (LoginRequired, ClientLoginRequired)
 
 
 @asynccontextmanager
@@ -33,7 +47,14 @@ app = FastAPI(title="minsta instagrapi service", lifespan=lifespan)
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request, exc: Exception):
     logger.exception("Unhandled error on %s %s", request.method, request.url.path)
-    return JSONResponse(status_code=500, content={"detail": str(exc), "exc_type": type(exc).__name__})
+    status_code = 500
+    if isinstance(exc, SESSION_INVALID_EXCEPTIONS):
+        status_code = 401
+    elif isinstance(exc, ChallengeRequired):
+        status_code = 403
+    elif isinstance(exc, (RateLimitError, PleaseWaitFewMinutes)):
+        status_code = 429
+    return JSONResponse(status_code=status_code, content={"detail": str(exc), "exc_type": type(exc).__name__})
 
 
 def build_client(settings: Optional[dict] = None) -> Client:
@@ -74,6 +95,60 @@ def rotation_status(client_and_id: tuple = Depends(get_client)):
     return {"items": db.get_rotation_status(session_id)}
 
 
+class AdminSettingsUpdate(BaseModel):
+    poll_interval_seconds: Optional[int] = Field(default=None, ge=60)
+    poll_accounts_per_tick: Optional[int] = Field(default=None, ge=1)
+    poll_people_limit: Optional[int] = Field(default=None, ge=1)
+    poll_posts_per_account: Optional[int] = Field(default=None, ge=1)
+    max_requests_per_hour: Optional[int] = Field(default=None, ge=1)
+    max_requests_per_day: Optional[int] = Field(default=None, ge=1)
+
+
+def _admin_status() -> dict:
+    return {
+        "settings": {
+            "poll_interval_seconds": poller.get_poll_interval_seconds(),
+            "poll_accounts_per_tick": poller.get_accounts_per_tick(),
+            "poll_people_limit": poller.get_people_limit(),
+            "poll_posts_per_account": poller.get_posts_per_account(),
+            "max_requests_per_hour": request_budget.get_max_requests_per_hour(),
+            "max_requests_per_day": request_budget.get_max_requests_per_day(),
+        },
+        "poller": poller.get_status(),
+    }
+
+
+@app.get("/admin/status")
+def admin_status():
+    """Current effective values for every admin-editable setting, plus the background poller's running/paused state — no session auth needed, this is global process state rather than per-account data (same reasoning as the existing /status endpoint)."""
+    return _admin_status()
+
+
+@app.post("/admin/settings")
+def admin_update_settings(update: AdminSettingsUpdate):
+    for key, value in update.model_dump(exclude_none=True).items():
+        db.set_setting(key, str(value))
+    return _admin_status()
+
+
+@app.post("/admin/poller/pause")
+def admin_pause_poller():
+    poller.set_paused(True)
+    return poller.get_status()
+
+
+@app.post("/admin/poller/resume")
+def admin_resume_poller():
+    poller.set_paused(False)
+    return poller.get_status()
+
+
+@app.post("/admin/poller/trigger-now")
+def admin_trigger_poller():
+    poller.trigger_now()
+    return {"ok": True}
+
+
 @app.post("/rotation/{followed_user_id}/close-friend")
 def set_close_friend(
     followed_user_id: str,
@@ -89,15 +164,36 @@ def set_close_friend(
 
 
 @app.post("/auth/login")
-def login(sessionid: str = Form(...)):
-    logger.info("login_by_sessionid attempt, sessionid length=%d, prefix=%r", len(sessionid), sessionid[:15])
+def login(
+    sessionid: Optional[str] = Form(None),
+    username: Optional[str] = Form(None),
+    password: Optional[str] = Form(None),
+    verification_code: Optional[str] = Form(None),
+):
+    if not sessionid and not (username and password):
+        raise HTTPException(status_code=400, detail="Provide a sessionid, or a username and password.")
+
     request_budget.guard()
     cl = build_client()
     try:
-        cl.login_by_sessionid(sessionid)
+        if sessionid:
+            logger.info("login_by_sessionid attempt, sessionid length=%d, prefix=%r", len(sessionid), sessionid[:15])
+            cl.login_by_sessionid(sessionid)
+        else:
+            logger.info("login attempt for username=%r (2fa code provided: %s)", username, bool(verification_code))
+            cl.login(username, password, verification_code=verification_code or "")
     except Exception as exc:
-        logger.exception("login_by_sessionid failed: %s: %s", type(exc).__name__, exc)
-        raise HTTPException(status_code=401, detail=f"Instagram login failed: {type(exc).__name__}: {exc}")
+        # Returned as a JSONResponse (not HTTPException) so exc_type travels
+        # with the error body — the frontend uses it to tell "needs a 2FA
+        # code" apart from "wrong password" apart from "session cookie stale".
+        logger.exception("login failed: %s: %s", type(exc).__name__, exc)
+        return JSONResponse(
+            status_code=401,
+            content={
+                "detail": f"Instagram login failed: {type(exc).__name__}: {exc}",
+                "exc_type": type(exc).__name__,
+            },
+        )
 
     session_id = storage.new_session_id()
     persist(cl, session_id)

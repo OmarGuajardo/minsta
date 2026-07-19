@@ -1,12 +1,8 @@
-import { redirect } from "next/navigation";
-import { getSessionCookie } from "@/lib/session";
+import { requireSessionId } from "@/lib/require-session";
 import { CreatePostForm } from "@/components/CreatePostForm";
 
 export default async function NewPostPage() {
-  const sessionId = await getSessionCookie();
-  if (!sessionId) {
-    redirect("/login");
-  }
+  await requireSessionId();
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col items-center justify-center gap-8 p-8">

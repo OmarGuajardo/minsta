@@ -1,16 +1,28 @@
 import { NextResponse } from "next/server";
-import { InstagrapiError, login } from "@/lib/instagrapi";
+import { InstagrapiError, login, type LoginCredentials } from "@/lib/instagrapi";
 import { setSessionCookie } from "@/lib/session";
 
 export async function POST(request: Request) {
-  const { sessionid } = await request.json();
+  const body = await request.json();
 
-  if (!sessionid || typeof sessionid !== "string") {
-    return NextResponse.json({ error: "A sessionid cookie value is required.", code: "login_failed" }, { status: 400 });
+  let credentials: LoginCredentials;
+  if (typeof body.sessionid === "string" && body.sessionid) {
+    credentials = { sessionid: body.sessionid };
+  } else if (typeof body.username === "string" && body.username && typeof body.password === "string" && body.password) {
+    credentials = {
+      username: body.username,
+      password: body.password,
+      verificationCode: typeof body.verificationCode === "string" ? body.verificationCode : undefined,
+    };
+  } else {
+    return NextResponse.json(
+      { error: "Provide a sessionid, or a username and password.", code: "login_failed" },
+      { status: 400 }
+    );
   }
 
   try {
-    const sessionId = await login(sessionid);
+    const sessionId = await login(credentials);
     await setSessionCookie(sessionId);
     return NextResponse.json({ ok: true });
   } catch (err) {

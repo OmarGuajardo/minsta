@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { InstagrapiError } from "@/lib/instagrapi";
 import { getMyFeed, type FeedPost } from "@/lib/feed";
-import { clearSessionCookie, getSessionCookie } from "@/lib/session";
+import { catchAuthError, requireSessionId } from "@/lib/require-session";
 import { FeedList } from "@/components/FeedList";
 import { RequestBudgetWidget } from "@/components/RequestBudgetWidget";
 
@@ -18,10 +17,7 @@ export default async function FeedPage({
 }: {
   searchParams: Promise<{ refresh?: string; range?: string }>;
 }) {
-  const sessionId = await getSessionCookie();
-  if (!sessionId) {
-    redirect("/login");
-  }
+  const sessionId = await requireSessionId();
 
   const { refresh, range } = await searchParams;
   const forceRefresh = refresh === "1";
@@ -32,12 +28,8 @@ export default async function FeedPage({
   let posts: FeedPost[] = [];
   let errorMessage: string | null = null;
   try {
-    posts = await getMyFeed(sessionId, forceRefresh, selectedOption.days);
+    posts = await catchAuthError(() => getMyFeed(sessionId, forceRefresh, selectedOption.days));
   } catch (err) {
-    if (err instanceof InstagrapiError && err.code === "not_authenticated") {
-      await clearSessionCookie();
-      redirect("/login");
-    }
     if (err instanceof InstagrapiError && (err.code === "challenge_required" || err.code === "rate_limited")) {
       errorMessage = err.message;
     } else {
@@ -61,6 +53,9 @@ export default async function FeedPage({
           </Link>
           <Link href="/health" className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15">
             Health
+          </Link>
+          <Link href="/admin" className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15">
+            Admin
           </Link>
         </div>
       </div>

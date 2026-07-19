@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { proxiedImageUrl } from "@/lib/image-proxy";
 import type { RotationStatusItem } from "@/lib/instagrapi";
 
@@ -67,6 +68,7 @@ function SortHeader({
 }
 
 export function FollowedAccountsTable({ accounts: initialAccounts }: { accounts: RotationStatusItem[] }) {
+  const router = useRouter();
   const [accounts, setAccounts] = useState(initialAccounts);
   const [sortKey, setSortKey] = useState<SortKey>("last_checked_at");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
@@ -93,7 +95,14 @@ export function FollowedAccountsTable({ accounts: initialAccounts }: { accounts:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isCloseFriend: !current }),
       });
-      if (!res.ok) throw new Error("request failed");
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data?.code === "not_authenticated") {
+          router.push("/login?reason=expired");
+          return;
+        }
+        throw new Error("request failed");
+      }
     } catch {
       // Revert on failure — the toggle didn't actually take effect server-side.
       setAccounts((prev) =>
