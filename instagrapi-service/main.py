@@ -195,7 +195,10 @@ def login(
             },
         )
 
-    session_id = storage.new_session_id()
+    # Keyed by the Instagram account's own numeric id, not a random token —
+    # otherwise every re-login orphans the account from its previously
+    # polled posts/rotation state (they're stored per session_id in db.py).
+    session_id = str(cl.user_id)
     persist(cl, session_id)
     return {"session_id": session_id}
 
