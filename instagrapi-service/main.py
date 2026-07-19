@@ -2,28 +2,32 @@ import logging
 import os
 import tempfile
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import NoReturn, Optional
+from typing import Optional
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from instagrapi import Client
-from instagrapi.exceptions import ChallengeRequired, FeedbackRequired, LoginRequired, PleaseWaitFewMinutes, RateLimitError
 
+import db
+import poller
 import request_budget
 import storage
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("instagrapi-service")
 
-app = FastAPI(title="minsta instagrapi service")
 
-# /feed re-fetches the following list on every call (cheap, one call) so
-# unfollows/follows are never stale — only each account's own posts are
-# cached, since that's the expensive part (one call per followed account,
-# each paced by delay_range).
-USER_MEDIA_CACHE_TTL_SECONDS = 300
-_user_media_cache: dict[tuple[str, str, int], tuple[float, list]] = {}
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    db.init_db()
+    poller.start()
+    yield
+    poller.stop()
+
+
+app = FastAPI(title="minsta instagrapi service", lifespan=lifespan)
 
 
 @app.exception_handler(Exception)
@@ -53,28 +57,35 @@ def persist(cl: Client, session_id: str) -> None:
     storage.save_settings(session_id, cl.get_settings())
 
 
-def raise_as_http_error(exc: Exception) -> NoReturn:
-    """Classifies common instagrapi failures into clear HTTP responses instead of a bare 500."""
-    if isinstance(exc, (ChallengeRequired, LoginRequired)):
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                "Instagram requires additional verification on this account. "
-                "Complete it in the official Instagram app or website, then try again."
-            ),
-        ) from exc
-    if isinstance(exc, (PleaseWaitFewMinutes, RateLimitError, FeedbackRequired)):
-        raise HTTPException(
-            status_code=429,
-            detail="Too many requests to Instagram — please wait a while before trying again.",
-        ) from exc
-    logger.exception("Unexpected instagrapi error")
-    raise HTTPException(status_code=502, detail=f"Failed to reach Instagram: {exc}") from exc
-
-
 @app.get("/health")
 def health():
-    return {"ok": True, "requests_remaining_this_hour": request_budget.remaining()}
+    return {"ok": True}
+
+
+@app.get("/status")
+def status():
+    return {"request_budget": request_budget.usage()}
+
+
+@app.get("/rotation-status")
+def rotation_status(client_and_id: tuple = Depends(get_client)):
+    """Every followed account the background poller knows about for this session, and when it was last actually checked — for surfacing rotation coverage in the UI."""
+    _cl, session_id = client_and_id
+    return {"items": db.get_rotation_status(session_id)}
+
+
+@app.post("/rotation/{followed_user_id}/close-friend")
+def set_close_friend(
+    followed_user_id: str,
+    is_close_friend: bool = Form(...),
+    client_and_id: tuple = Depends(get_client),
+):
+    """Marks/unmarks an account as a close friend. Once any account is marked,
+    the poller (see db.get_accounts_to_poll) polls ONLY close friends instead
+    of the whole following list, until none remain marked."""
+    _cl, session_id = client_and_id
+    db.set_close_friend(session_id, followed_user_id, is_close_friend)
+    return {"ok": True}
 
 
 @app.post("/auth/login")
@@ -130,54 +141,28 @@ def user_posts(username: str, amount: int = 24, client_and_id: tuple = Depends(g
 
 @app.get("/feed")
 def feed(
-    people_limit: int = 30,
-    per_user: int = 2,
+    days: Optional[int] = None,
     force_refresh: bool = False,
     client_and_id: tuple = Depends(get_client),
 ):
-    """Aggregated feed built only from accounts the logged-in user follows.
+    """Feed of posts from followed accounts, read from the local database
+    kept up to date by the background poller (poller.py) rather than
+    scanning Instagram live on every page view.
 
-    Deliberately NOT instagrapi's get_timeline_feed() — that's Instagram's own
-    ranked home feed, which mixes in suggested/explore-adjacent content. This
-    builds the feed ourselves from user_following() + user_medias() per
-    account so it's strictly limited to people actually followed.
+    Deliberately NOT built from Instagram's own get_timeline_feed() — that's
+    Instagram's own ranked home feed, which mixes in suggested/explore-
+    adjacent content. The poller itself uses user_following() + user_medias()
+    per account, so this is strictly limited to people actually followed.
     """
-    cl, session_id = client_and_id
+    _cl, session_id = client_and_id
 
-    # Always fetched fresh — this is one cheap call, and caching it was what
-    # made unfollows/follows invisible until the whole feed cache expired.
-    request_budget.guard()
-    try:
-        following = cl.user_following(cl.user_id, amount=people_limit)
-    except Exception as exc:
-        raise_as_http_error(exc)
+    if force_refresh:
+        # On-demand poll for just this session instead of waiting for the
+        # next scheduled tick — still respects the same request budget.
+        poller.poll_session_now(session_id)
 
-    items = []
-    for followed_user_id, user_short in following.items():
-        media_cache_key = (session_id, followed_user_id, per_user)
-        cached = _user_media_cache.get(media_cache_key)
-        if not force_refresh and cached and (time.time() - cached[0]) < USER_MEDIA_CACHE_TTL_SECONDS:
-            medias = cached[1]
-        else:
-            # Stop scanning further accounts rather than erroring mid-request —
-            # a partial feed from whatever budget was left is far better than
-            # discarding everything gathered so far.
-            if request_budget.remaining() <= 0:
-                logger.warning("Stopping /feed scan early — hourly request budget exhausted")
-                break
-            request_budget.guard()
-            try:
-                medias = cl.user_medias(followed_user_id, per_user)
-            except Exception:
-                logger.warning("Skipping %s in feed — media fetch failed", user_short.username, exc_info=True)
-                continue
-            _user_media_cache[media_cache_key] = (time.time(), medias)
-
-        for media in medias:
-            items.append({"media": media, "user": user_short})
-
-    persist(cl, session_id)
-    items.sort(key=lambda item: item["media"].taken_at, reverse=True)
+    since = time.time() - days * 24 * 60 * 60 if days else None
+    items = db.get_posts(session_id, since=since)
     return {"items": items}
 
 

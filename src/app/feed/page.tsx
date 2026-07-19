@@ -4,6 +4,7 @@ import { InstagrapiError } from "@/lib/instagrapi";
 import { getMyFeed, type FeedPost } from "@/lib/feed";
 import { clearSessionCookie, getSessionCookie } from "@/lib/session";
 import { FeedList } from "@/components/FeedList";
+import { RequestBudgetWidget } from "@/components/RequestBudgetWidget";
 
 const RANGE_OPTIONS = [
   { key: "1w", label: "1 week", days: 7 },
@@ -58,8 +59,13 @@ export default async function FeedPage({
           <Link href="/profile" className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15">
             Profile
           </Link>
+          <Link href="/health" className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15">
+            Health
+          </Link>
         </div>
       </div>
+
+      <RequestBudgetWidget />
 
       <div className="flex gap-2">
         {RANGE_OPTIONS.map((option) => (

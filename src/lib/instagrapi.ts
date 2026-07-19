@@ -194,16 +194,49 @@ export function getUserPosts(sessionId: string, username: string, amount: number
   });
 }
 
-/** Feed built only from accounts the logged-in user follows — see instagrapi-service's /feed for why this isn't the algorithmic timeline. */
-export function getFeed(
-  sessionId: string,
-  peopleLimit = 30,
-  perUser = 2,
-  forceRefresh = false
-): Promise<{ items: FeedItem[] }> {
+/**
+ * Feed of posts from followed accounts, read from instagrapi-service's local
+ * database (kept up to date by its background poller) rather than scanning
+ * Instagram live on every request. `days`, when given, filters to posts
+ * within that many days of now. `forceRefresh` triggers an immediate
+ * on-demand poll for this session before reading, instead of waiting for the
+ * next scheduled tick.
+ */
+export function getFeed(sessionId: string, days?: number, forceRefresh = false): Promise<{ items: FeedItem[] }> {
   return instagrapiFetch<{ items: FeedItem[] }>("/feed", {
     sessionId,
-    searchParams: { people_limit: peopleLimit, per_user: perUser, force_refresh: forceRefresh },
+    searchParams: { days, force_refresh: forceRefresh },
+  });
+}
+
+export interface RequestBudget {
+  hour: { used: number; limit: number };
+  day: { used: number; limit: number };
+}
+
+export function getRequestBudgetStatus(): Promise<{ request_budget: RequestBudget }> {
+  return instagrapiFetch<{ request_budget: RequestBudget }>("/status");
+}
+
+export interface RotationStatusItem {
+  user_id: string;
+  username: string | null;
+  profile_pic_url: string | null;
+  last_checked_at: number | null;
+  latest_post_at: number | null;
+  is_close_friend: boolean;
+}
+
+export function getRotationStatus(sessionId: string): Promise<{ items: RotationStatusItem[] }> {
+  return instagrapiFetch<{ items: RotationStatusItem[] }>("/rotation-status", { sessionId });
+}
+
+/** Marks/unmarks an account as a close friend. Once any account is marked, the background poller polls ONLY close friends instead of the whole following list. */
+export function setCloseFriend(sessionId: string, userId: string, isCloseFriend: boolean): Promise<{ ok: boolean }> {
+  return instagrapiFetch<{ ok: boolean }>(`/rotation/${encodeURIComponent(userId)}/close-friend`, {
+    method: "POST",
+    sessionId,
+    form: { is_close_friend: String(isCloseFriend) },
   });
 }
 

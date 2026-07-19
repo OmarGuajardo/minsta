@@ -7,6 +7,7 @@ import { clearSessionCookie, getSessionCookie } from "@/lib/session";
 import { ProfileHeader } from "@/components/ProfileHeader";
 import { PhotoGrid } from "@/components/PhotoGrid";
 import { LogoutButton } from "@/components/LogoutButton";
+import { RequestBudgetWidget } from "@/components/RequestBudgetWidget";
 
 export default async function ProfilePage() {
   const sessionId = await getSessionCookie();
@@ -35,6 +36,9 @@ export default async function ProfilePage() {
           <Link href="/feed" className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15">
             Feed
           </Link>
+          <Link href="/health" className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15">
+            Health
+          </Link>
           <Link
             href="/post/new"
             className="rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background"
@@ -44,6 +48,7 @@ export default async function ProfilePage() {
           <LogoutButton />
         </div>
       </div>
+      <RequestBudgetWidget />
       <PhotoGrid items={posts} />
     </main>
   );

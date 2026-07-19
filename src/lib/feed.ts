@@ -52,26 +52,24 @@ function getMediaItems(media: Media): FeedMediaItem[] {
 }
 
 /**
- * Feed of posts from followed accounts only — see instagrapi-service's /feed
- * for why this isn't an algorithmic timeline.
+ * Feed of posts from followed accounts only, read from instagrapi-service's
+ * local database rather than scanning Instagram live — see that service's
+ * /feed for why this isn't an algorithmic timeline, and how the background
+ * poller keeps it up to date.
  *
- * `days`, when given, filters to posts within that many days of now. This is
- * a plain post-fetch filter, not a new cache dimension — the underlying
- * per-account post cache doesn't change based on which range you want to
- * view, so every range reuses the same cached data.
+ * `days`, when given, filters to posts within that many days of now
+ * (filtered server-side). `forceRefresh` triggers an immediate on-demand
+ * poll for this session before reading, instead of waiting for the next
+ * scheduled background tick.
  */
 export async function getMyFeed(sessionId: string, forceRefresh = false, days?: number): Promise<FeedPost[]> {
-  const { items } = await getFeed(sessionId, 30, 2, forceRefresh);
-
-  const cutoff = days !== undefined ? Date.now() - days * 24 * 60 * 60 * 1000 : undefined;
-  const filtered =
-    cutoff !== undefined ? items.filter((item) => new Date(item.media.taken_at).getTime() >= cutoff) : items;
+  const { items } = await getFeed(sessionId, days, forceRefresh);
 
   // Comments are intentionally not fetched here right now — one extra
   // sequential private-API call per post (up to ~60 for a full feed) was the
   // single biggest contributor to /feed's load time. Re-add as an on-demand
   // fetch (e.g. "view comments" per post) rather than eagerly for every post.
-  return filtered.map((item) => ({
+  return items.map((item) => ({
     id: item.media.id,
     media: getMediaItems(item.media),
     username: item.user.username ?? "",
