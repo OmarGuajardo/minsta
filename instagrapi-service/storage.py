@@ -36,3 +36,7 @@ def delete_session(session_id: str) -> None:
     path = _session_path(session_id)
     if path.exists():
         path.unlink()
+
+
+def list_sessions() -> list[str]:
+    return [path.stem for path in DATA_DIR.glob("*.json")]
