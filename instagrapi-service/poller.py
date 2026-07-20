@@ -6,6 +6,7 @@ from typing import Any, Optional
 
 from instagrapi import Client
 from instagrapi.exceptions import ChallengeRequired, LoginRequired
+from instagrapi.types import UserShort
 
 import db
 import request_budget
@@ -92,30 +93,47 @@ def poll_session_now(session_id: str) -> None:
         return
 
     requests_used = 0
-    try:
-        request_budget.guard()
-        requests_used += 1
-        following = cl.user_following(cl.user_id, amount=get_people_limit())
-    except (ChallengeRequired, LoginRequired):
-        logger.warning(
-            "Poll: session %s needs Instagram's account-verification checkpoint completed "
-            "(in the official app/website) before polling can continue",
-            session_id,
-        )
-        db.record_poll_run(
-            session_id, started_at, time.time(), [], 0, requests_used, "needs_checkpoint",
-            "Instagram requires a verification checkpoint completed in the official app/website",
-        )
-        return
-    except Exception as exc:
-        logger.warning("Poll: failed to fetch following list for session %s", session_id, exc_info=True)
-        db.record_poll_run(
-            session_id, started_at, time.time(), [], 0, requests_used, "failed",
-            f"Failed to fetch following list: {exc}",
-        )
-        return
+    if db.has_close_friends(session_id):
+        # Already know exactly who to check — skip the following-list fetch
+        # entirely (it exists only to discover accounts and sync the
+        # rotation cache, neither of which matters once we're scoped to an
+        # already-known, already-tracked close-friends list) and read
+        # candidates straight from that local cache instead, saving one
+        # real Instagram request every tick.
+        candidates = db.get_close_friend_accounts_to_poll(session_id, get_accounts_per_tick())
+        accounts = [
+            (
+                c["user_id"],
+                UserShort(pk=c["user_id"], username=c["username"], profile_pic_url=c["profile_pic_url"] or None),
+            )
+            for c in candidates
+        ]
+    else:
+        try:
+            request_budget.guard()
+            requests_used += 1
+            following = cl.user_following(cl.user_id, amount=get_people_limit())
+        except (ChallengeRequired, LoginRequired):
+            logger.warning(
+                "Poll: session %s needs Instagram's account-verification checkpoint completed "
+                "(in the official app/website) before polling can continue",
+                session_id,
+            )
+            db.record_poll_run(
+                session_id, started_at, time.time(), [], 0, requests_used, "needs_checkpoint",
+                "Instagram requires a verification checkpoint completed in the official app/website",
+            )
+            return
+        except Exception as exc:
+            logger.warning("Poll: failed to fetch following list for session %s", session_id, exc_info=True)
+            db.record_poll_run(
+                session_id, started_at, time.time(), [], 0, requests_used, "failed",
+                f"Failed to fetch following list: {exc}",
+            )
+            return
 
-    accounts = db.get_accounts_to_poll(session_id, following, get_accounts_per_tick())
+        accounts = db.get_accounts_to_poll(session_id, following, get_accounts_per_tick())
+
     checked_usernames: list[str] = []
     posts_fetched = 0
     status = "completed"

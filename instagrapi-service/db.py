@@ -203,6 +203,33 @@ def get_accounts_to_poll(session_id: str, following: dict[str, Any], limit: int)
     return [(row[0], following[row[0]]) for row in rows if row[0] in following]
 
 
+def has_close_friends(session_id: str) -> bool:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM poll_rotation WHERE session_id = ? AND is_close_friend = 1 LIMIT 1",
+            (session_id,),
+        ).fetchone()
+    return row is not None
+
+
+def get_close_friend_accounts_to_poll(session_id: str, limit: int) -> list[dict[str, Any]]:
+    """Once close friends are set, we already know exactly who to poll —
+    reads candidates straight from the local rotation cache instead of
+    get_accounts_to_poll's live-following-list-required path, saving the
+    one Instagram request that list fetch would otherwise cost every tick."""
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT followed_user_id, username, profile_pic_url FROM poll_rotation
+            WHERE session_id = ? AND is_close_friend = 1
+            ORDER BY last_checked_at ASC
+            LIMIT ?
+            """,
+            (session_id, limit),
+        ).fetchall()
+    return [{"user_id": row[0], "username": row[1], "profile_pic_url": row[2]} for row in rows]
+
+
 def get_rotation_status(session_id: str) -> list[dict[str, Any]]:
     """Every followed account the poller knows about for this session, and when it was last actually checked — least-recently-checked (most overdue) first."""
     latest_posts = get_latest_post_dates(session_id)

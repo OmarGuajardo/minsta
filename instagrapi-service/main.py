@@ -128,8 +128,11 @@ def _admin_status() -> dict:
         "last_run": db.get_last_poll_run(session_id) if session_id else None,
         "upcoming": {
             "usernames": upcoming_usernames,
-            # +1 for the following-list fetch every tick makes before checking any account.
-            "estimated_requests": (1 + len(upcoming_usernames)) if session_id else 0,
+            # +1 for the following-list fetch, unless close friends are set —
+            # then that fetch is skipped entirely (see poller.poll_session_now).
+            "estimated_requests": (
+                (0 if db.has_close_friends(session_id) else 1) + len(upcoming_usernames) if session_id else 0
+            ),
         },
     }
 

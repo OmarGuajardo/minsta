@@ -150,7 +150,8 @@ export function AdminPollerControls({ initial }: { initial: PollerData }) {
             </p>
             <p className="text-xs text-black/60 dark:text-white/60">
               Estimated cost: ~{upcoming.estimated_requests} Instagram request
-              {upcoming.estimated_requests === 1 ? "" : "s"} (1 for the following list, 1 per account checked).
+              {upcoming.estimated_requests === 1 ? "" : "s"} (1 per account checked, plus 1 for the following list —
+              skipped when close friends are set, since we already know who to check).
             </p>
           </div>
         ) : (
