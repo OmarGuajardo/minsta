@@ -4,8 +4,8 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "r
 import { useRouter } from "next/navigation";
 
 const MAX_ITEMS = 10;
-const ALLOWED_TYPES = new Set(["image/jpeg", "video/mp4"]);
-const VIDEO_TYPE = "video/mp4";
+const VIDEO_TYPES = new Set(["video/mp4", "video/quicktime"]);
+const ALLOWED_TYPES = new Set(["image/jpeg", ...VIDEO_TYPES]);
 
 interface SelectedItem {
   file: File;
@@ -37,7 +37,7 @@ export function CreatePostForm() {
 
     const unsupported = incoming.some((file) => !ALLOWED_TYPES.has(file.type));
     if (unsupported) {
-      setError("Only JPEG photos and MP4 videos are supported.");
+      setError("Only JPEG photos and MP4/MOV videos are supported.");
       return;
     }
 
@@ -57,7 +57,7 @@ export function CreatePostForm() {
         ...accepted.map((file) => ({
           file,
           previewUrl: URL.createObjectURL(file),
-          isVideo: file.type === VIDEO_TYPE,
+          isVideo: VIDEO_TYPES.has(file.type),
         })),
       ];
     });
@@ -194,7 +194,7 @@ export function CreatePostForm() {
           id="media"
           name="media"
           type="file"
-          accept="image/jpeg,video/mp4"
+          accept="image/jpeg,video/mp4,video/quicktime,.mov"
           multiple
           disabled={!canAddMore}
           onChange={handleFilesSelected}

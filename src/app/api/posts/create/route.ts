@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { InstagrapiError, publishPost } from "@/lib/instagrapi";
 import { clearSessionCookie, getSessionCookie } from "@/lib/session";
 
-const ALLOWED_TYPES = new Set(["image/jpeg", "video/mp4"]);
+const ALLOWED_TYPES = new Set(["image/jpeg", "video/mp4", "video/quicktime"]);
 const MAX_ITEMS = 10;
 
 export async function POST(request: Request) {
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
   }
   if (files.some((file) => !ALLOWED_TYPES.has(file.type))) {
     return NextResponse.json(
-      { error: "Only JPEG photos and MP4 videos are supported.", code: "unknown" },
+      { error: "Only JPEG photos and MP4/MOV videos are supported.", code: "unknown" },
       { status: 400 }
     );
   }
