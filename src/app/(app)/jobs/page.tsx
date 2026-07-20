@@ -14,7 +14,9 @@ export default async function AdminPage() {
 
       <section className="flex flex-col gap-4">
         <h2 className="text-lg font-semibold">Background poller</h2>
-        <AdminPollerControls initialPoller={status.poller} />
+        <AdminPollerControls
+          initial={{ poller: status.poller, last_run: status.last_run, upcoming: status.upcoming }}
+        />
       </section>
 
       <section className="flex flex-col gap-4">

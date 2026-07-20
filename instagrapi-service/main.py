@@ -107,16 +107,30 @@ class AdminSettingsUpdate(BaseModel):
 
 
 def _admin_status() -> dict:
+    # Single-account app: with exactly one persisted session, that's the
+    # account /jobs shows poller history/preview for. With zero or multiple
+    # sessions there's no unambiguous one to report on.
+    sessions = storage.list_sessions()
+    session_id = sessions[0] if len(sessions) == 1 else None
+    accounts_per_tick = poller.get_accounts_per_tick()
+    upcoming_usernames = db.get_upcoming_poll_preview(session_id, accounts_per_tick) if session_id else []
+
     return {
         "settings": {
             "poll_interval_seconds": poller.get_poll_interval_seconds(),
-            "poll_accounts_per_tick": poller.get_accounts_per_tick(),
+            "poll_accounts_per_tick": accounts_per_tick,
             "poll_people_limit": poller.get_people_limit(),
             "poll_posts_per_account": poller.get_posts_per_account(),
             "max_requests_per_hour": request_budget.get_max_requests_per_hour(),
             "max_requests_per_day": request_budget.get_max_requests_per_day(),
         },
         "poller": poller.get_status(),
+        "last_run": db.get_last_poll_run(session_id) if session_id else None,
+        "upcoming": {
+            "usernames": upcoming_usernames,
+            # +1 for the following-list fetch every tick makes before checking any account.
+            "estimated_requests": (1 + len(upcoming_usernames)) if session_id else 0,
+        },
     }
 
 

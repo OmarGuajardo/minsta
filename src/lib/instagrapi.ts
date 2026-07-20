@@ -283,9 +283,21 @@ export interface AdminSettings {
   max_requests_per_day: number;
 }
 
+export interface PollRun {
+  started_at: number;
+  finished_at: number;
+  checked_usernames: string[];
+  posts_fetched: number;
+  requests_used: number;
+  status: "completed" | "partial_budget" | "skipped_budget" | "needs_checkpoint" | "failed";
+  detail: string;
+}
+
 export interface AdminStatus {
   settings: AdminSettings;
   poller: { paused: boolean; tracked_sessions: number };
+  last_run: PollRun | null;
+  upcoming: { usernames: string[]; estimated_requests: number };
 }
 
 export function getAdminStatus(): Promise<AdminStatus> {

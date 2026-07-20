@@ -76,6 +76,22 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS poll_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                started_at REAL NOT NULL,
+                finished_at REAL NOT NULL,
+                checked_usernames TEXT NOT NULL,
+                posts_fetched INTEGER NOT NULL,
+                requests_used INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                detail TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_poll_history_session ON poll_history (session_id, id DESC)")
         # Added after the initial schema — migrate existing installs in place.
         if _add_column_if_missing(conn, "posts", "user_id", "TEXT"):
             _backfill_post_user_ids(conn)
@@ -226,6 +242,94 @@ def mark_checked(session_id: str, followed_user_id: str) -> None:
             "UPDATE poll_rotation SET last_checked_at = ? WHERE session_id = ? AND followed_user_id = ?",
             (time.time(), session_id, followed_user_id),
         )
+
+
+def record_poll_run(
+    session_id: str,
+    started_at: float,
+    finished_at: float,
+    checked_usernames: list[str],
+    posts_fetched: int,
+    requests_used: int,
+    status: str,
+    detail: str = "",
+) -> None:
+    """Logs one full poller tick for /jobs to show "what the previous run
+    did" — keeps only the most recent 20 runs per session, since this is
+    diagnostic history, not data anything else depends on."""
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO poll_history
+                (session_id, started_at, finished_at, checked_usernames, posts_fetched, requests_used, status, detail)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (session_id, started_at, finished_at, json.dumps(checked_usernames), posts_fetched, requests_used, status, detail),
+        )
+        conn.execute(
+            """
+            DELETE FROM poll_history
+            WHERE session_id = ? AND id NOT IN (
+                SELECT id FROM poll_history WHERE session_id = ? ORDER BY id DESC LIMIT 20
+            )
+            """,
+            (session_id, session_id),
+        )
+
+
+def get_last_poll_run(session_id: str) -> Optional[dict[str, Any]]:
+    with _connect() as conn:
+        row = conn.execute(
+            """
+            SELECT started_at, finished_at, checked_usernames, posts_fetched, requests_used, status, detail
+            FROM poll_history WHERE session_id = ? ORDER BY id DESC LIMIT 1
+            """,
+            (session_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "started_at": row[0],
+        "finished_at": row[1],
+        "checked_usernames": json.loads(row[2]),
+        "posts_fetched": row[3],
+        "requests_used": row[4],
+        "status": row[5],
+        "detail": row[6],
+    }
+
+
+def get_upcoming_poll_preview(session_id: str, limit: int) -> list[str]:
+    """Predicts the next tick's candidate accounts (same least-recently-
+    checked ordering as get_accounts_to_poll, close-friends-aware), read
+    from the already-synced rotation cache — no live Instagram call needed
+    just to preview what's coming up next."""
+    with _connect() as conn:
+        close_friend_rows = conn.execute(
+            "SELECT followed_user_id FROM poll_rotation WHERE session_id = ? AND is_close_friend = 1",
+            (session_id,),
+        ).fetchall()
+        close_friend_ids = {row[0] for row in close_friend_rows}
+
+        if close_friend_ids:
+            placeholders = ",".join("?" for _ in close_friend_ids)
+            rows = conn.execute(
+                f"""
+                SELECT username, followed_user_id FROM poll_rotation
+                WHERE session_id = ? AND followed_user_id IN ({placeholders})
+                ORDER BY last_checked_at ASC LIMIT ?
+                """,
+                (session_id, *close_friend_ids, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT username, followed_user_id FROM poll_rotation
+                WHERE session_id = ? ORDER BY last_checked_at ASC LIMIT ?
+                """,
+                (session_id, limit),
+            ).fetchall()
+    return [row[0] or row[1] for row in rows]
 
 
 def get_cached_profile(session_id: str) -> Optional[dict[str, Any]]:

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import time
 from typing import Any, Optional
 
 from instagrapi import Client
@@ -83,12 +84,17 @@ def poll_session_now(session_id: str) -> None:
     if cl is None:
         return
 
+    started_at = time.time()
+
     if _budget_exhausted():
         logger.info("Skipping poll for session %s — request budget exhausted", session_id)
+        db.record_poll_run(session_id, started_at, time.time(), [], 0, 0, "skipped_budget", "Request budget exhausted")
         return
 
+    requests_used = 0
     try:
         request_budget.guard()
+        requests_used += 1
         following = cl.user_following(cl.user_id, amount=get_people_limit())
     except (ChallengeRequired, LoginRequired):
         logger.warning(
@@ -96,20 +102,37 @@ def poll_session_now(session_id: str) -> None:
             "(in the official app/website) before polling can continue",
             session_id,
         )
+        db.record_poll_run(
+            session_id, started_at, time.time(), [], 0, requests_used, "needs_checkpoint",
+            "Instagram requires a verification checkpoint completed in the official app/website",
+        )
         return
-    except Exception:
+    except Exception as exc:
         logger.warning("Poll: failed to fetch following list for session %s", session_id, exc_info=True)
+        db.record_poll_run(
+            session_id, started_at, time.time(), [], 0, requests_used, "failed",
+            f"Failed to fetch following list: {exc}",
+        )
         return
 
     accounts = db.get_accounts_to_poll(session_id, following, get_accounts_per_tick())
+    checked_usernames: list[str] = []
+    posts_fetched = 0
+    status = "completed"
+    detail = ""
     for followed_user_id, user_short in accounts:
         if _budget_exhausted():
+            status = "partial_budget"
+            detail = "Request budget exhausted mid-tick"
             logger.info("Poll: request budget exhausted mid-tick for session %s", session_id)
             break
         try:
             request_budget.guard()
+            requests_used += 1
             medias = cl.user_medias(followed_user_id, get_posts_per_account())
             db.upsert_posts(session_id, [{"media": m, "user": user_short} for m in medias])
+            posts_fetched += len(medias)
+            checked_usernames.append(user_short.username or str(followed_user_id))
         except Exception:
             logger.warning("Poll: failed to fetch posts for %s", user_short.username, exc_info=True)
         finally:
@@ -118,6 +141,7 @@ def poll_session_now(session_id: str) -> None:
             db.mark_checked(session_id, followed_user_id)
 
     storage.save_settings(session_id, cl.get_settings())
+    db.record_poll_run(session_id, started_at, time.time(), checked_usernames, posts_fetched, requests_used, status, detail)
 
 
 async def _poll_loop() -> None:
