@@ -12,6 +12,7 @@ const STATUS_LABELS: Record<PollRun["status"], { label: string; color: string }>
   skipped_budget: { label: "Skipped (budget exhausted)", color: "text-amber-600 dark:text-amber-400" },
   needs_checkpoint: { label: "Needs verification", color: "text-red-600 dark:text-red-400" },
   failed: { label: "Failed", color: "text-red-600 dark:text-red-400" },
+  no_successful_fetches: { label: "All fetches failed", color: "text-red-600 dark:text-red-400" },
 };
 
 function formatDuration(seconds: number): string {

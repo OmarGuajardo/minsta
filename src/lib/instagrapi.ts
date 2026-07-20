@@ -280,7 +280,7 @@ export interface PollRun {
   checked_usernames: string[];
   posts_fetched: number;
   requests_used: number;
-  status: "completed" | "partial_budget" | "skipped_budget" | "needs_checkpoint" | "failed";
+  status: "completed" | "partial_budget" | "skipped_budget" | "needs_checkpoint" | "failed" | "no_successful_fetches";
   detail: string;
 }
 

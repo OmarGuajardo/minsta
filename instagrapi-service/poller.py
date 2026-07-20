@@ -138,6 +138,7 @@ def poll_session_now(session_id: str) -> None:
     posts_fetched = 0
     status = "completed"
     detail = ""
+    last_error = ""
     for followed_user_id, user_short in accounts:
         if _budget_exhausted():
             status = "partial_budget"
@@ -151,12 +152,20 @@ def poll_session_now(session_id: str) -> None:
             db.upsert_posts(session_id, [{"media": m, "user": user_short} for m in medias])
             posts_fetched += len(medias)
             checked_usernames.append(user_short.username or str(followed_user_id))
-        except Exception:
+        except Exception as exc:
+            last_error = f"{type(exc).__name__}: {exc}"
             logger.warning("Poll: failed to fetch posts for %s", user_short.username, exc_info=True)
         finally:
             # Mark checked even on failure, so a broken account doesn't get
             # retried every tick and starve the rest of the rotation.
             db.mark_checked(session_id, followed_user_id)
+
+    # Don't report "completed" when every single account fetch actually
+    # failed — that's a real failure (e.g. Instagram rejecting this session's
+    # ability to read others' feeds specifically), not a no-op success.
+    if status == "completed" and accounts and not checked_usernames:
+        status = "no_successful_fetches"
+        detail = f"All {len(accounts)} account fetch(es) failed. Last error: {last_error}"
 
     storage.save_settings(session_id, cl.get_settings())
     db.record_poll_run(session_id, started_at, time.time(), checked_usernames, posts_fetched, requests_used, status, detail)
