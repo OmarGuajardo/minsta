@@ -64,9 +64,14 @@ def usage() -> dict[str, dict[str, int]]:
         }
 
 
-def guard() -> None:
+def guard(label: str, detail: str = "") -> None:
     """Call immediately before each real Instagram private-API request. Raises
-    a 429 instead of making the call if either budget window is used up."""
+    a 429 instead of making the call if either budget window is used up.
+
+    `label` identifies which call this is (e.g. "poller.user_medias",
+    "profile.account_info") — persisted to request_log for /logs, so the
+    self-imposed budget doubles as a timestamped record of what was
+    actually requested, not just how many requests were made."""
     with _lock:
         now = time.time()
         _prune(now)
@@ -93,3 +98,4 @@ def guard() -> None:
                 ),
             )
         _timestamps.append(now)
+    db.log_request(now, label, detail)

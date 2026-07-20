@@ -107,16 +107,34 @@ class AdminSettingsUpdate(BaseModel):
 
 
 def _admin_status() -> dict:
+    # Single-account app: with exactly one persisted session, that's the
+    # account /jobs shows poller history/preview for. With zero or multiple
+    # sessions there's no unambiguous one to report on.
+    sessions = storage.list_sessions()
+    session_id = sessions[0] if len(sessions) == 1 else None
+    accounts_per_tick = poller.get_accounts_per_tick()
+    upcoming_usernames = db.get_upcoming_poll_preview(session_id, accounts_per_tick) if session_id else []
+
     return {
         "settings": {
             "poll_interval_seconds": poller.get_poll_interval_seconds(),
-            "poll_accounts_per_tick": poller.get_accounts_per_tick(),
+            "poll_accounts_per_tick": accounts_per_tick,
             "poll_people_limit": poller.get_people_limit(),
             "poll_posts_per_account": poller.get_posts_per_account(),
             "max_requests_per_hour": request_budget.get_max_requests_per_hour(),
             "max_requests_per_day": request_budget.get_max_requests_per_day(),
         },
         "poller": poller.get_status(),
+        "close_friends": db.get_close_friend_usernames(session_id) if session_id else [],
+        "last_run": db.get_last_poll_run(session_id) if session_id else None,
+        "upcoming": {
+            "usernames": upcoming_usernames,
+            # +1 for the following-list fetch, unless close friends are set —
+            # then that fetch is skipped entirely (see poller.poll_session_now).
+            "estimated_requests": (
+                (0 if db.has_close_friends(session_id) else 1) + len(upcoming_usernames) if session_id else 0
+            ),
+        },
     }
 
 
@@ -151,6 +169,15 @@ def admin_trigger_poller():
     return {"ok": True}
 
 
+@app.get("/admin/request-log")
+def admin_request_log(limit: int = 200):
+    """Timestamped history of every real Instagram request made (see
+    request_budget.guard) — /logs reads this. No session auth needed, same
+    reasoning as the other /admin endpoints: global process state, not
+    per-account data."""
+    return {"items": db.get_request_log(limit)}
+
+
 @app.post("/rotation/{followed_user_id}/close-friend")
 def set_close_friend(
     followed_user_id: str,
@@ -175,7 +202,7 @@ def login(
     if not sessionid and not (username and password):
         raise HTTPException(status_code=400, detail="Provide a sessionid, or a username and password.")
 
-    request_budget.guard()
+    request_budget.guard("auth.login", "sessionid" if sessionid else f"username={username}")
     cl = build_client()
     try:
         if sessionid:
@@ -214,7 +241,7 @@ def logout(x_session_id: str = Header(..., alias="X-Session-ID")):
 @app.get("/account")
 def account(client_and_id: tuple = Depends(get_client)):
     cl, session_id = client_and_id
-    request_budget.guard()
+    request_budget.guard("account_info")
     info = cl.account_info()
     persist(cl, session_id)
     return info
@@ -233,9 +260,9 @@ def profile(force_refresh: bool = False, client_and_id: tuple = Depends(get_clie
         if cached is not None:
             return cached
 
-    request_budget.guard()
+    request_budget.guard("profile.account_info")
     account_info = cl.account_info()
-    request_budget.guard()
+    request_budget.guard("profile.user_info_by_username", account_info.username)
     user = cl.user_info_by_username(account_info.username)
     persist(cl, session_id)
 
@@ -264,7 +291,7 @@ def profile_posts(force_refresh: bool = False, client_and_id: tuple = Depends(ge
         if cached:
             return {"items": cached}
 
-    request_budget.guard()
+    request_budget.guard("profile_posts.user_medias")
     medias = cl.user_medias(cl.user_id, 0)
     db.upsert_posts(session_id, [{"media": media, "user": media.user} for media in medias])
     persist(cl, session_id)
@@ -274,7 +301,7 @@ def profile_posts(force_refresh: bool = False, client_and_id: tuple = Depends(ge
 @app.get("/user/{username}")
 def user_by_username(username: str, client_and_id: tuple = Depends(get_client)):
     cl, session_id = client_and_id
-    request_budget.guard()
+    request_budget.guard("user_by_username", username)
     user = cl.user_info_by_username(username)
     persist(cl, session_id)
     return user
@@ -283,9 +310,9 @@ def user_by_username(username: str, client_and_id: tuple = Depends(get_client)):
 @app.get("/user/{username}/posts")
 def user_posts(username: str, amount: int = 24, client_and_id: tuple = Depends(get_client)):
     cl, session_id = client_and_id
-    request_budget.guard()
+    request_budget.guard("user_posts.user_id_from_username", username)
     user_id = cl.user_id_from_username(username)
-    request_budget.guard()
+    request_budget.guard("user_posts.user_medias", username)
     medias = cl.user_medias(user_id, amount)
     persist(cl, session_id)
     return {"items": medias}
@@ -321,7 +348,7 @@ def feed(
 @app.get("/media/{media_id}/comments")
 def media_comments(media_id: str, amount: int = 10, client_and_id: tuple = Depends(get_client)):
     cl, session_id = client_and_id
-    request_budget.guard()
+    request_budget.guard("media_comments", media_id)
     comments = cl.media_comments(media_id, amount)
     persist(cl, session_id)
     return {"items": comments}
@@ -403,12 +430,14 @@ async def publish_media(
                 tmp_path = transcoded
             tmp_paths.append(tmp_path)
 
-        request_budget.guard()
         if len(tmp_paths) > 1:
+            request_budget.guard("media.publish_album", f"{len(tmp_paths)} items")
             media = cl.album_upload(tmp_paths, caption)
         elif files[0].content_type in VIDEO_CONTENT_TYPES:
+            request_budget.guard("media.publish_video")
             media = cl.video_upload(tmp_paths[0], caption)
         else:
+            request_budget.guard("media.publish_photo")
             media = cl.photo_upload(tmp_paths[0], caption)
     finally:
         for tmp_path in tmp_paths:

@@ -243,15 +243,6 @@ export function getFeed(sessionId: string, days?: number, forceRefresh = false):
   });
 }
 
-export interface RequestBudget {
-  hour: { used: number; limit: number };
-  day: { used: number; limit: number };
-}
-
-export function getRequestBudgetStatus(): Promise<{ request_budget: RequestBudget }> {
-  return instagrapiFetch<{ request_budget: RequestBudget }>("/status");
-}
-
 export interface RotationStatusItem {
   user_id: string;
   username: string | null;
@@ -283,9 +274,22 @@ export interface AdminSettings {
   max_requests_per_day: number;
 }
 
+export interface PollRun {
+  started_at: number;
+  finished_at: number;
+  checked_usernames: string[];
+  posts_fetched: number;
+  requests_used: number;
+  status: "completed" | "partial_budget" | "skipped_budget" | "needs_checkpoint" | "failed" | "no_successful_fetches";
+  detail: string;
+}
+
 export interface AdminStatus {
   settings: AdminSettings;
   poller: { paused: boolean; tracked_sessions: number };
+  close_friends: string[];
+  last_run: PollRun | null;
+  upcoming: { usernames: string[]; estimated_requests: number };
 }
 
 export function getAdminStatus(): Promise<AdminStatus> {
@@ -306,6 +310,17 @@ export function resumePoller(): Promise<AdminStatus["poller"]> {
 
 export function triggerPollerNow(): Promise<{ ok: boolean }> {
   return instagrapiFetch<{ ok: boolean }>("/admin/poller/trigger-now", { method: "POST" });
+}
+
+export interface RequestLogEntry {
+  timestamp: number;
+  label: string;
+  detail: string;
+}
+
+/** Timestamped history of every real Instagram request made — what /logs shows. */
+export function getRequestLog(limit = 200): Promise<{ items: RequestLogEntry[] }> {
+  return instagrapiFetch<{ items: RequestLogEntry[] }>("/admin/request-log", { searchParams: { limit } });
 }
 
 export function getMediaComments(sessionId: string, mediaId: string, amount = 10): Promise<{ items: Comment[] }> {

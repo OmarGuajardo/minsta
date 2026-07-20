@@ -1,39 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
-interface RequestBudget {
-  hour: { used: number; limit: number };
-  day: { used: number; limit: number };
-}
-
-const POLL_INTERVAL_MS = 30_000;
+import { useRequestBudget } from "@/hooks/useRequestBudget";
 
 export function RequestBudgetWidget() {
-  const [budget, setBudget] = useState<RequestBudget | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function fetchBudget() {
-      try {
-        const res = await fetch("/api/request-budget");
-        if (!res.ok) return;
-        const data: { request_budget: RequestBudget } = await res.json();
-        if (!cancelled) setBudget(data.request_budget);
-      } catch {
-        // Best-effort — the widget just skips updating this cycle.
-      }
-    }
-
-    fetchBudget();
-    const interval = setInterval(fetchBudget, POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, []);
-
+  const budget = useRequestBudget();
   if (!budget) return null;
 
   return (

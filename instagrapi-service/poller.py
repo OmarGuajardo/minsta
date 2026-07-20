@@ -1,10 +1,12 @@
 import asyncio
 import logging
 import os
+import time
 from typing import Any, Optional
 
 from instagrapi import Client
 from instagrapi.exceptions import ChallengeRequired, LoginRequired
+from instagrapi.types import UserShort
 
 import db
 import request_budget
@@ -83,41 +85,90 @@ def poll_session_now(session_id: str) -> None:
     if cl is None:
         return
 
+    started_at = time.time()
+
     if _budget_exhausted():
         logger.info("Skipping poll for session %s — request budget exhausted", session_id)
+        db.record_poll_run(session_id, started_at, time.time(), [], 0, 0, "skipped_budget", "Request budget exhausted")
         return
 
-    try:
-        request_budget.guard()
-        following = cl.user_following(cl.user_id, amount=get_people_limit())
-    except (ChallengeRequired, LoginRequired):
-        logger.warning(
-            "Poll: session %s needs Instagram's account-verification checkpoint completed "
-            "(in the official app/website) before polling can continue",
-            session_id,
-        )
-        return
-    except Exception:
-        logger.warning("Poll: failed to fetch following list for session %s", session_id, exc_info=True)
-        return
+    requests_used = 0
+    if db.has_close_friends(session_id):
+        # Already know exactly who to check — skip the following-list fetch
+        # entirely (it exists only to discover accounts and sync the
+        # rotation cache, neither of which matters once we're scoped to an
+        # already-known, already-tracked close-friends list) and read
+        # candidates straight from that local cache instead, saving one
+        # real Instagram request every tick.
+        candidates = db.get_close_friend_accounts_to_poll(session_id, get_accounts_per_tick())
+        accounts = [
+            (
+                c["user_id"],
+                UserShort(pk=c["user_id"], username=c["username"], profile_pic_url=c["profile_pic_url"] or None),
+            )
+            for c in candidates
+        ]
+    else:
+        try:
+            request_budget.guard("poller.user_following")
+            requests_used += 1
+            following = cl.user_following(cl.user_id, amount=get_people_limit())
+        except (ChallengeRequired, LoginRequired):
+            logger.warning(
+                "Poll: session %s needs Instagram's account-verification checkpoint completed "
+                "(in the official app/website) before polling can continue",
+                session_id,
+            )
+            db.record_poll_run(
+                session_id, started_at, time.time(), [], 0, requests_used, "needs_checkpoint",
+                "Instagram requires a verification checkpoint completed in the official app/website",
+            )
+            return
+        except Exception as exc:
+            logger.warning("Poll: failed to fetch following list for session %s", session_id, exc_info=True)
+            db.record_poll_run(
+                session_id, started_at, time.time(), [], 0, requests_used, "failed",
+                f"Failed to fetch following list: {exc}",
+            )
+            return
 
-    accounts = db.get_accounts_to_poll(session_id, following, get_accounts_per_tick())
+        accounts = db.get_accounts_to_poll(session_id, following, get_accounts_per_tick())
+
+    checked_usernames: list[str] = []
+    posts_fetched = 0
+    status = "completed"
+    detail = ""
+    last_error = ""
     for followed_user_id, user_short in accounts:
         if _budget_exhausted():
+            status = "partial_budget"
+            detail = "Request budget exhausted mid-tick"
             logger.info("Poll: request budget exhausted mid-tick for session %s", session_id)
             break
         try:
-            request_budget.guard()
+            request_budget.guard("poller.user_medias", user_short.username or str(followed_user_id))
+            requests_used += 1
             medias = cl.user_medias(followed_user_id, get_posts_per_account())
             db.upsert_posts(session_id, [{"media": m, "user": user_short} for m in medias])
-        except Exception:
+            posts_fetched += len(medias)
+            checked_usernames.append(user_short.username or str(followed_user_id))
+        except Exception as exc:
+            last_error = f"{type(exc).__name__}: {exc}"
             logger.warning("Poll: failed to fetch posts for %s", user_short.username, exc_info=True)
         finally:
             # Mark checked even on failure, so a broken account doesn't get
             # retried every tick and starve the rest of the rotation.
             db.mark_checked(session_id, followed_user_id)
 
+    # Don't report "completed" when every single account fetch actually
+    # failed — that's a real failure (e.g. Instagram rejecting this session's
+    # ability to read others' feeds specifically), not a no-op success.
+    if status == "completed" and accounts and not checked_usernames:
+        status = "no_successful_fetches"
+        detail = f"All {len(accounts)} account fetch(es) failed. Last error: {last_error}"
+
     storage.save_settings(session_id, cl.get_settings())
+    db.record_poll_run(session_id, started_at, time.time(), checked_usernames, posts_fetched, requests_used, status, detail)
 
 
 async def _poll_loop() -> None:

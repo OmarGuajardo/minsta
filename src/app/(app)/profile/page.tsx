@@ -27,15 +27,6 @@ export default async function ProfilePage({
       <div className="flex items-start justify-between">
         <ProfileHeader profile={profile} />
         <div className="flex items-center gap-2">
-          <Link href="/feed" className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15">
-            Feed
-          </Link>
-          <Link href="/health" className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15">
-            Health
-          </Link>
-          <Link href="/admin" className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15">
-            Admin
-          </Link>
           <Link
             href="/post/new"
             className="rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background"
