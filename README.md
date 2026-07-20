@@ -48,6 +48,7 @@ The Python service also runs standalone without Docker, if preferred:
 cd instagrapi-service
 python3.12 -m venv .venv   # a Python version with prebuilt wheels for instagrapi's C-extension deps
 .venv/bin/pip install -r requirements.txt
+.venv/bin/pip install --no-deps moviepy==2.2.1  # see requirements.txt for why this is a separate step
 INSTAGRAPI_DATA_DIR=./data .venv/bin/uvicorn main:app --reload
 ```
 

@@ -325,33 +325,43 @@ def media_comments(media_id: str, amount: int = 10, client_and_id: tuple = Depen
     return {"items": comments}
 
 
-MAX_ALBUM_PHOTOS = 10
+MAX_ALBUM_ITEMS = 10
+VIDEO_CONTENT_TYPE = "video/mp4"
 
 
-@app.post("/media/publish_photo")
-async def publish_photo(
+@app.post("/media/publish")
+async def publish_media(
     caption: str = Form(""),
     files: list[UploadFile] = File(...),
     client_and_id: tuple = Depends(get_client),
 ):
-    """A single file publishes a normal photo post; 2+ files publish an
-    Instagram carousel (album) post — Instagram allows at most 10 items."""
+    """A single photo publishes a normal photo post, a single video
+    publishes a video post, and 2+ files (any mix of photos/videos) publish
+    an Instagram carousel via album_upload — Instagram allows at most 10
+    items either way. album_upload dispatches each item by file extension,
+    so the temp files below must keep their real suffix."""
     cl, session_id = client_and_id
     if not files:
-        raise HTTPException(status_code=400, detail="At least one photo is required.")
-    if len(files) > MAX_ALBUM_PHOTOS:
-        raise HTTPException(status_code=400, detail=f"Instagram allows at most {MAX_ALBUM_PHOTOS} photos per post.")
+        raise HTTPException(status_code=400, detail="At least one photo or video is required.")
+    if len(files) > MAX_ALBUM_ITEMS:
+        raise HTTPException(status_code=400, detail=f"Instagram allows at most {MAX_ALBUM_ITEMS} items per post.")
 
     tmp_paths: list[Path] = []
     try:
         for upload in files:
-            suffix = os.path.splitext(upload.filename or "upload.jpg")[1] or ".jpg"
+            is_video = upload.content_type == VIDEO_CONTENT_TYPE
+            suffix = os.path.splitext(upload.filename or "")[1] or (".mp4" if is_video else ".jpg")
             with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
                 tmp.write(await upload.read())
                 tmp_paths.append(Path(tmp.name))
 
         request_budget.guard()
-        media = cl.photo_upload(tmp_paths[0], caption) if len(tmp_paths) == 1 else cl.album_upload(tmp_paths, caption)
+        if len(tmp_paths) > 1:
+            media = cl.album_upload(tmp_paths, caption)
+        elif files[0].content_type == VIDEO_CONTENT_TYPE:
+            media = cl.video_upload(tmp_paths[0], caption)
+        else:
+            media = cl.photo_upload(tmp_paths[0], caption)
     finally:
         for tmp_path in tmp_paths:
             tmp_path.unlink(missing_ok=True)

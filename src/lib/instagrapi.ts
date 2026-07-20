@@ -315,9 +315,9 @@ export function getMediaComments(sessionId: string, mediaId: string, amount = 10
   });
 }
 
-/** A single file publishes a normal photo post; 2+ files publish an Instagram carousel (album) post. */
-export async function publishPhoto(sessionId: string, files: File[], caption: string): Promise<Media> {
-  const url = new URL("/media/publish_photo", baseUrl());
+/** A single photo publishes a normal photo post, a single video publishes a video post, and 2+ files (any mix) publish an Instagram carousel. */
+export async function publishPost(sessionId: string, files: File[], caption: string): Promise<Media> {
+  const url = new URL("/media/publish", baseUrl());
   const formData = new FormData();
   for (const file of files) {
     formData.append("files", file);
