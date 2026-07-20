@@ -80,6 +80,24 @@ def persist(cl: Client, session_id: str) -> None:
     storage.save_settings(session_id, cl.get_settings())
 
 
+def _device_settings_for_reuse() -> Optional[dict]:
+    """For a username/password login attempt, reuse whatever device
+    fingerprint (UUIDs, device_settings, user_agent, locale, country) this
+    app has already established for the account, rather than presenting as
+    a brand-new device on every attempt. instagrapi's own BadPassword
+    messaging names device fingerprint mismatches as a rejection cause, and
+    its best-practices guide recommends reusing UUIDs across logins.
+
+    This app is single-account, so "exactly one persisted session" is
+    treated as that account's established device — with zero or multiple
+    sessions there's no unambiguous fingerprint to reuse, so a fresh one is
+    generated as before."""
+    sessions = storage.list_sessions()
+    if len(sessions) != 1:
+        return None
+    return storage.load_settings(sessions[0])
+
+
 @app.get("/health")
 def health():
     return {"ok": True}
@@ -176,14 +194,26 @@ def login(
         raise HTTPException(status_code=400, detail="Provide a sessionid, or a username and password.")
 
     request_budget.guard()
-    cl = build_client()
     try:
         if sessionid:
+            cl = build_client()
             logger.info("login_by_sessionid attempt, sessionid length=%d, prefix=%r", len(sessionid), sessionid[:15])
             cl.login_by_sessionid(sessionid)
         else:
-            logger.info("login attempt for username=%r (2fa code provided: %s)", username, bool(verification_code))
-            cl.login(username, password, verification_code=verification_code or "")
+            reused_settings = _device_settings_for_reuse()
+            cl = build_client(reused_settings)
+            logger.info(
+                "login attempt for username=%r (2fa code provided: %s, reusing known device: %s)",
+                username,
+                bool(verification_code),
+                reused_settings is not None,
+            )
+            # relogin=True clears the loaded session's auth state (cookies,
+            # authorization_data) so this is a genuine password attempt
+            # rather than a no-op "already logged in" short-circuit — it
+            # does NOT touch the device fingerprint fields set_settings()
+            # just restored above.
+            cl.login(username, password, relogin=True, verification_code=verification_code or "")
     except Exception as exc:
         # Returned as a JSONResponse (not HTTPException) so exc_type travels
         # with the error body — the frontend uses it to tell "needs a 2FA
