@@ -92,6 +92,17 @@ def init_db() -> None:
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_poll_history_session ON poll_history (session_id, id DESC)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS request_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp REAL NOT NULL,
+                label TEXT NOT NULL,
+                detail TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_request_log_id ON request_log (id DESC)")
         # Added after the initial schema — migrate existing installs in place.
         if _add_column_if_missing(conn, "posts", "user_id", "TEXT"):
             _backfill_post_user_ids(conn)
@@ -373,6 +384,27 @@ def get_upcoming_poll_preview(session_id: str, limit: int) -> list[str]:
                 (session_id, limit),
             ).fetchall()
     return [row[0] or row[1] for row in rows]
+
+
+def log_request(timestamp: float, label: str, detail: str = "") -> None:
+    """Persists one real Instagram request (see request_budget.guard) for
+    /logs — diagnostic history, not something else depends on, so it's kept
+    bounded rather than growing forever."""
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO request_log (timestamp, label, detail) VALUES (?, ?, ?)",
+            (timestamp, label, detail),
+        )
+        conn.execute("DELETE FROM request_log WHERE id NOT IN (SELECT id FROM request_log ORDER BY id DESC LIMIT 2000)")
+
+
+def get_request_log(limit: int = 200) -> list[dict[str, Any]]:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT timestamp, label, detail FROM request_log ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [{"timestamp": row[0], "label": row[1], "detail": row[2]} for row in rows]
 
 
 def get_cached_profile(session_id: str) -> Optional[dict[str, Any]]:

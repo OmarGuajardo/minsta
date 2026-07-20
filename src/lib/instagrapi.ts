@@ -243,15 +243,6 @@ export function getFeed(sessionId: string, days?: number, forceRefresh = false):
   });
 }
 
-export interface RequestBudget {
-  hour: { used: number; limit: number };
-  day: { used: number; limit: number };
-}
-
-export function getRequestBudgetStatus(): Promise<{ request_budget: RequestBudget }> {
-  return instagrapiFetch<{ request_budget: RequestBudget }>("/status");
-}
-
 export interface RotationStatusItem {
   user_id: string;
   username: string | null;
@@ -319,6 +310,17 @@ export function resumePoller(): Promise<AdminStatus["poller"]> {
 
 export function triggerPollerNow(): Promise<{ ok: boolean }> {
   return instagrapiFetch<{ ok: boolean }>("/admin/poller/trigger-now", { method: "POST" });
+}
+
+export interface RequestLogEntry {
+  timestamp: number;
+  label: string;
+  detail: string;
+}
+
+/** Timestamped history of every real Instagram request made — what /logs shows. */
+export function getRequestLog(limit = 200): Promise<{ items: RequestLogEntry[] }> {
+  return instagrapiFetch<{ items: RequestLogEntry[] }>("/admin/request-log", { searchParams: { limit } });
 }
 
 export function getMediaComments(sessionId: string, mediaId: string, amount = 10): Promise<{ items: Comment[] }> {

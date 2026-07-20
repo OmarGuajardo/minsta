@@ -110,7 +110,7 @@ def poll_session_now(session_id: str) -> None:
         ]
     else:
         try:
-            request_budget.guard()
+            request_budget.guard("poller.user_following")
             requests_used += 1
             following = cl.user_following(cl.user_id, amount=get_people_limit())
         except (ChallengeRequired, LoginRequired):
@@ -145,7 +145,7 @@ def poll_session_now(session_id: str) -> None:
             logger.info("Poll: request budget exhausted mid-tick for session %s", session_id)
             break
         try:
-            request_budget.guard()
+            request_budget.guard("poller.user_medias", user_short.username or str(followed_user_id))
             requests_used += 1
             medias = cl.user_medias(followed_user_id, get_posts_per_account())
             db.upsert_posts(session_id, [{"media": m, "user": user_short} for m in medias])

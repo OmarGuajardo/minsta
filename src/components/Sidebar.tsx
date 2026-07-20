@@ -8,8 +8,8 @@ import { CircularGauge } from "@/components/CircularGauge";
 const NAV_ITEMS = [
   { href: "/feed", label: "Feed" },
   { href: "/profile", label: "Profile" },
-  { href: "/health", label: "Health" },
   { href: "/jobs", label: "Jobs" },
+  { href: "/logs", label: "Logs" },
 ];
 
 export function Sidebar() {

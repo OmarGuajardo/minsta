@@ -169,6 +169,15 @@ def admin_trigger_poller():
     return {"ok": True}
 
 
+@app.get("/admin/request-log")
+def admin_request_log(limit: int = 200):
+    """Timestamped history of every real Instagram request made (see
+    request_budget.guard) — /logs reads this. No session auth needed, same
+    reasoning as the other /admin endpoints: global process state, not
+    per-account data."""
+    return {"items": db.get_request_log(limit)}
+
+
 @app.post("/rotation/{followed_user_id}/close-friend")
 def set_close_friend(
     followed_user_id: str,
@@ -193,7 +202,7 @@ def login(
     if not sessionid and not (username and password):
         raise HTTPException(status_code=400, detail="Provide a sessionid, or a username and password.")
 
-    request_budget.guard()
+    request_budget.guard("auth.login", "sessionid" if sessionid else f"username={username}")
     cl = build_client()
     try:
         if sessionid:
@@ -232,7 +241,7 @@ def logout(x_session_id: str = Header(..., alias="X-Session-ID")):
 @app.get("/account")
 def account(client_and_id: tuple = Depends(get_client)):
     cl, session_id = client_and_id
-    request_budget.guard()
+    request_budget.guard("account_info")
     info = cl.account_info()
     persist(cl, session_id)
     return info
@@ -251,9 +260,9 @@ def profile(force_refresh: bool = False, client_and_id: tuple = Depends(get_clie
         if cached is not None:
             return cached
 
-    request_budget.guard()
+    request_budget.guard("profile.account_info")
     account_info = cl.account_info()
-    request_budget.guard()
+    request_budget.guard("profile.user_info_by_username", account_info.username)
     user = cl.user_info_by_username(account_info.username)
     persist(cl, session_id)
 
@@ -282,7 +291,7 @@ def profile_posts(force_refresh: bool = False, client_and_id: tuple = Depends(ge
         if cached:
             return {"items": cached}
 
-    request_budget.guard()
+    request_budget.guard("profile_posts.user_medias")
     medias = cl.user_medias(cl.user_id, 0)
     db.upsert_posts(session_id, [{"media": media, "user": media.user} for media in medias])
     persist(cl, session_id)
@@ -292,7 +301,7 @@ def profile_posts(force_refresh: bool = False, client_and_id: tuple = Depends(ge
 @app.get("/user/{username}")
 def user_by_username(username: str, client_and_id: tuple = Depends(get_client)):
     cl, session_id = client_and_id
-    request_budget.guard()
+    request_budget.guard("user_by_username", username)
     user = cl.user_info_by_username(username)
     persist(cl, session_id)
     return user
@@ -301,9 +310,9 @@ def user_by_username(username: str, client_and_id: tuple = Depends(get_client)):
 @app.get("/user/{username}/posts")
 def user_posts(username: str, amount: int = 24, client_and_id: tuple = Depends(get_client)):
     cl, session_id = client_and_id
-    request_budget.guard()
+    request_budget.guard("user_posts.user_id_from_username", username)
     user_id = cl.user_id_from_username(username)
-    request_budget.guard()
+    request_budget.guard("user_posts.user_medias", username)
     medias = cl.user_medias(user_id, amount)
     persist(cl, session_id)
     return {"items": medias}
@@ -339,7 +348,7 @@ def feed(
 @app.get("/media/{media_id}/comments")
 def media_comments(media_id: str, amount: int = 10, client_and_id: tuple = Depends(get_client)):
     cl, session_id = client_and_id
-    request_budget.guard()
+    request_budget.guard("media_comments", media_id)
     comments = cl.media_comments(media_id, amount)
     persist(cl, session_id)
     return {"items": comments}
@@ -421,12 +430,14 @@ async def publish_media(
                 tmp_path = transcoded
             tmp_paths.append(tmp_path)
 
-        request_budget.guard()
         if len(tmp_paths) > 1:
+            request_budget.guard("media.publish_album", f"{len(tmp_paths)} items")
             media = cl.album_upload(tmp_paths, caption)
         elif files[0].content_type in VIDEO_CONTENT_TYPES:
+            request_budget.guard("media.publish_video")
             media = cl.video_upload(tmp_paths[0], caption)
         else:
+            request_budget.guard("media.publish_photo")
             media = cl.photo_upload(tmp_paths[0], caption)
     finally:
         for tmp_path in tmp_paths:
