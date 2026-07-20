@@ -17,7 +17,7 @@ export function Sidebar() {
   const budget = useRequestBudget();
 
   return (
-    <nav className="flex w-40 shrink-0 flex-col gap-1 border-r border-black/10 p-4 dark:border-white/15">
+    <nav className="sticky top-0 flex h-screen w-40 shrink-0 flex-col gap-1 overflow-y-auto border-r border-black/10 p-4 dark:border-white/15">
       <span className="mb-2 px-3 text-lg font-semibold">minsta</span>
       {NAV_ITEMS.map((item) => {
         const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
