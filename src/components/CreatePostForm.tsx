@@ -28,6 +28,10 @@ export function CreatePostForm() {
       const data = await res.json();
 
       if (!res.ok) {
+        if (data.code === "not_authenticated") {
+          router.push("/login?reason=expired");
+          return;
+        }
         setError(data.error ?? "Failed to publish post.");
         return;
       }

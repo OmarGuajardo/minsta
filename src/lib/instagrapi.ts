@@ -3,6 +3,7 @@ const DEFAULT_BASE_URL = "http://localhost:8000";
 export type InstagrapiErrorCode =
   | "not_authenticated"
   | "login_failed"
+  | "verification_required"
   | "rate_limited"
   | "challenge_required"
   | "unknown";
@@ -24,19 +25,34 @@ interface UpstreamErrorBody {
   exc_type?: string;
 }
 
+const SESSION_EXPIRED_MESSAGE = "Your Instagram session has expired — please log in again.";
+
 function classifyError(status: number, body: UpstreamErrorBody | undefined): InstagrapiError {
   const detail = body?.detail ?? `Request failed with status ${status}`;
-  if (status === 401) {
-    return new InstagrapiError(
-      status,
-      "not_authenticated",
-      "Your Instagram session has expired — please log in again."
-    );
+  const excType = body?.exc_type;
+
+  // TwoFactorRequired only ever comes from a login attempt (existing sessions
+  // don't suddenly need a 2FA code), so it's checked before the generic 401
+  // handling below.
+  if (excType === "TwoFactorRequired") {
+    return new InstagrapiError(status, "verification_required", detail);
   }
-  if (status === 429 || body?.exc_type === "RateLimitError" || body?.exc_type === "PleaseWaitFewMinutes") {
+  if (excType === "LoginRequired" || excType === "ClientLoginRequired") {
+    return new InstagrapiError(status, "not_authenticated", SESSION_EXPIRED_MESSAGE);
+  }
+  if (status === 401) {
+    // A 401 with no exc_type is get_client's synthetic "no local session at
+    // all" response — genuinely "please log in". A 401 WITH an exc_type came
+    // from a login attempt that failed (bad sessionid/password), which is a
+    // different situation and shouldn't be worded as "your session expired".
+    return excType
+      ? new InstagrapiError(status, "login_failed", detail)
+      : new InstagrapiError(status, "not_authenticated", SESSION_EXPIRED_MESSAGE);
+  }
+  if (status === 429 || excType === "RateLimitError" || excType === "PleaseWaitFewMinutes") {
     return new InstagrapiError(status, "rate_limited", detail);
   }
-  if (status === 403) {
+  if (status === 403 || excType === "ChallengeRequired") {
     return new InstagrapiError(status, "challenge_required", detail);
   }
   return new InstagrapiError(status, "unknown", detail);
@@ -47,6 +63,7 @@ interface InstagrapiFetchOptions {
   sessionId?: string;
   searchParams?: Record<string, string | number | boolean | undefined>;
   form?: Record<string, string | undefined>;
+  json?: Record<string, unknown>;
 }
 
 function baseUrl(): string {
@@ -72,6 +89,9 @@ async function instagrapiFetch<T>(path: string, options: InstagrapiFetchOptions 
     }
     body = params.toString();
     headers["Content-Type"] = "application/x-www-form-urlencoded";
+  } else if (options.json) {
+    body = JSON.stringify(options.json);
+    headers["Content-Type"] = "application/json";
   }
 
   const res = await fetch(url, {
@@ -166,11 +186,23 @@ export interface FeedItem {
   user: UserShort;
 }
 
-/** Logs in via a real Instagram `sessionid` cookie value (extracted from a logged-in browser session). Returns our internal session id. */
-export async function login(sessionid: string): Promise<string> {
+export type LoginCredentials =
+  | { sessionid: string }
+  | { username: string; password: string; verificationCode?: string };
+
+/** Logs in via either a real Instagram `sessionid` cookie value, or a username/password (with an optional 2FA code). Returns our internal session id. */
+export async function login(credentials: LoginCredentials): Promise<string> {
+  const form =
+    "sessionid" in credentials
+      ? { sessionid: credentials.sessionid }
+      : {
+          username: credentials.username,
+          password: credentials.password,
+          verification_code: credentials.verificationCode,
+        };
   const body = await instagrapiFetch<{ session_id: string }>("/auth/login", {
     method: "POST",
-    form: { sessionid },
+    form,
   });
   return body.session_id;
 }
@@ -238,6 +270,40 @@ export function setCloseFriend(sessionId: string, userId: string, isCloseFriend:
     sessionId,
     form: { is_close_friend: String(isCloseFriend) },
   });
+}
+
+export interface AdminSettings {
+  poll_interval_seconds: number;
+  poll_accounts_per_tick: number;
+  poll_people_limit: number;
+  poll_posts_per_account: number;
+  max_requests_per_hour: number;
+  max_requests_per_day: number;
+}
+
+export interface AdminStatus {
+  settings: AdminSettings;
+  poller: { paused: boolean; tracked_sessions: number };
+}
+
+export function getAdminStatus(): Promise<AdminStatus> {
+  return instagrapiFetch<AdminStatus>("/admin/status");
+}
+
+export function updateAdminSettings(updates: Partial<AdminSettings>): Promise<AdminStatus> {
+  return instagrapiFetch<AdminStatus>("/admin/settings", { method: "POST", json: updates });
+}
+
+export function pausePoller(): Promise<AdminStatus["poller"]> {
+  return instagrapiFetch<AdminStatus["poller"]>("/admin/poller/pause", { method: "POST" });
+}
+
+export function resumePoller(): Promise<AdminStatus["poller"]> {
+  return instagrapiFetch<AdminStatus["poller"]>("/admin/poller/resume", { method: "POST" });
+}
+
+export function triggerPollerNow(): Promise<{ ok: boolean }> {
+  return instagrapiFetch<{ ok: boolean }>("/admin/poller/trigger-now", { method: "POST" });
 }
 
 export function getMediaComments(sessionId: string, mediaId: string, amount = 10): Promise<{ items: Comment[] }> {

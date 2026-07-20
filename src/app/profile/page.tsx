@@ -1,32 +1,18 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { InstagrapiError } from "@/lib/instagrapi";
 import { getMyProfile } from "@/lib/profile";
 import { getAllMyPosts } from "@/lib/posts";
-import { clearSessionCookie, getSessionCookie } from "@/lib/session";
+import { withSession } from "@/lib/require-session";
 import { ProfileHeader } from "@/components/ProfileHeader";
 import { PhotoGrid } from "@/components/PhotoGrid";
 import { LogoutButton } from "@/components/LogoutButton";
 import { RequestBudgetWidget } from "@/components/RequestBudgetWidget";
 
 export default async function ProfilePage() {
-  const sessionId = await getSessionCookie();
-  if (!sessionId) {
-    redirect("/login");
-  }
-
-  let profile;
-  let posts;
-  try {
-    profile = await getMyProfile(sessionId);
-    posts = await getAllMyPosts(sessionId, profile.username);
-  } catch (err) {
-    if (err instanceof InstagrapiError && err.code === "not_authenticated") {
-      await clearSessionCookie();
-      redirect("/login");
-    }
-    throw err;
-  }
+  const { profile, posts } = await withSession(async (sessionId) => {
+    const profile = await getMyProfile(sessionId);
+    const posts = await getAllMyPosts(sessionId, profile.username);
+    return { profile, posts };
+  });
 
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-8 p-8">
@@ -38,6 +24,9 @@ export default async function ProfilePage() {
           </Link>
           <Link href="/health" className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15">
             Health
+          </Link>
+          <Link href="/admin" className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15">
+            Admin
           </Link>
           <Link
             href="/post/new"

@@ -59,6 +59,14 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+            """
+        )
         # Added after the initial schema — migrate existing installs in place.
         if _add_column_if_missing(conn, "posts", "user_id", "TEXT"):
             _backfill_post_user_ids(conn)
@@ -205,4 +213,19 @@ def mark_checked(session_id: str, followed_user_id: str) -> None:
         conn.execute(
             "UPDATE poll_rotation SET last_checked_at = ? WHERE session_id = ? AND followed_user_id = ?",
             (time.time(), session_id, followed_user_id),
+        )
+
+
+def get_setting(key: str, default: str) -> str:
+    """Admin-editable global settings (poll interval, budget caps, etc.) — persisted here so an /admin change survives a restart, falling back to `default` (normally an env var) when unset."""
+    with _connect() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    return row[0] if row is not None else default
+
+
+def set_setting(key: str, value: str) -> None:
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+            (key, value),
         )

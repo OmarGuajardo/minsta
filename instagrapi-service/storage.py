@@ -1,6 +1,5 @@
 import json
 import os
-import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -11,10 +10,6 @@ from typing import Optional
 # Instagram on every login attempt.
 DATA_DIR = Path(os.getenv("INSTAGRAPI_DATA_DIR", "/data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def new_session_id() -> str:
-    return uuid.uuid4().hex
 
 
 def _session_path(session_id: str) -> Path:
