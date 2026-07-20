@@ -1,11 +1,13 @@
 import logging
 import os
+import subprocess
 import tempfile
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
+import imageio_ffmpeg
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from instagrapi import Client
@@ -325,23 +327,92 @@ def media_comments(media_id: str, amount: int = 10, client_and_id: tuple = Depen
     return {"items": comments}
 
 
-@app.post("/media/publish_photo")
-async def publish_photo(
+MAX_ALBUM_ITEMS = 10
+VIDEO_CONTENT_TYPE = "video/mp4"
+QUICKTIME_CONTENT_TYPE = "video/quicktime"
+VIDEO_CONTENT_TYPES = {VIDEO_CONTENT_TYPE, QUICKTIME_CONTENT_TYPE}
+
+
+def _transcode_to_mp4(src: Path) -> Path:
+    """iPhone recordings are typically .mov, often HEVC-encoded — Instagram's
+    upload pipeline (and instagrapi's own video_rupload/album_upload
+    extension dispatch) expects H.264/AAC MP4, so re-encode before handing
+    off. Uses the ffmpeg binary imageio-ffmpeg already bundles for moviepy's
+    thumbnail generation, rather than adding a separate dependency."""
+    dst = src.with_name(src.stem + "-transcoded.mp4")
+    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    try:
+        subprocess.run(
+            [
+                ffmpeg_exe,
+                "-y",
+                "-i",
+                str(src),
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",  # force widely-compatible 8-bit 4:2:0, regardless of the source's chroma/bit depth
+                "-preset",
+                "fast",
+                "-crf",
+                "23",
+                "-c:a",
+                "aac",
+                "-movflags",
+                "+faststart",
+                str(dst),
+            ],
+            check=True,
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        logger.error("ffmpeg transcode of %s failed: %s", src.name, exc.stderr.decode(errors="replace")[-2000:])
+        raise HTTPException(status_code=400, detail="Failed to convert video for upload.") from exc
+    return dst
+
+
+@app.post("/media/publish")
+async def publish_media(
     caption: str = Form(""),
-    file: UploadFile = File(...),
+    files: list[UploadFile] = File(...),
     client_and_id: tuple = Depends(get_client),
 ):
+    """A single photo publishes a normal photo post, a single video
+    publishes a video post, and 2+ files (any mix of photos/videos) publish
+    an Instagram carousel via album_upload — Instagram allows at most 10
+    items either way. album_upload dispatches each item by file extension,
+    so the temp files below must keep their real (post-transcode) suffix."""
     cl, session_id = client_and_id
-    suffix = os.path.splitext(file.filename or "upload.jpg")[1] or ".jpg"
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp.write(await file.read())
-        tmp_path = Path(tmp.name)
+    if not files:
+        raise HTTPException(status_code=400, detail="At least one photo or video is required.")
+    if len(files) > MAX_ALBUM_ITEMS:
+        raise HTTPException(status_code=400, detail=f"Instagram allows at most {MAX_ALBUM_ITEMS} items per post.")
 
+    tmp_paths: list[Path] = []
     try:
+        for upload in files:
+            is_video = upload.content_type in VIDEO_CONTENT_TYPES
+            suffix = os.path.splitext(upload.filename or "")[1] or (".mp4" if is_video else ".jpg")
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                tmp.write(await upload.read())
+                tmp_path = Path(tmp.name)
+
+            if upload.content_type == QUICKTIME_CONTENT_TYPE:
+                transcoded = _transcode_to_mp4(tmp_path)
+                tmp_path.unlink(missing_ok=True)
+                tmp_path = transcoded
+            tmp_paths.append(tmp_path)
+
         request_budget.guard()
-        media = cl.photo_upload(tmp_path, caption)
+        if len(tmp_paths) > 1:
+            media = cl.album_upload(tmp_paths, caption)
+        elif files[0].content_type in VIDEO_CONTENT_TYPES:
+            media = cl.video_upload(tmp_paths[0], caption)
+        else:
+            media = cl.photo_upload(tmp_paths[0], caption)
     finally:
-        tmp_path.unlink(missing_ok=True)
+        for tmp_path in tmp_paths:
+            tmp_path.unlink(missing_ok=True)
 
     persist(cl, session_id)
     return media

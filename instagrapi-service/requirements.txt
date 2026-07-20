@@ -1,4 +1,10 @@
-instagrapi==2.18.3
+instagrapi[video]==2.18.3
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-multipart==0.0.20
+
+# moviepy generates video thumbnails for instagrapi's video/album uploads.
+# Installed with --no-deps: its own pin (pillow<12) conflicts with
+# instagrapi's (pillow>=12.2.0), but moviepy works fine against the newer
+# Pillow already pulled in above — see instagrapi-service/Dockerfile.
+# pip install --no-deps moviepy==2.2.1
