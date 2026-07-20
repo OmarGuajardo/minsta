@@ -67,6 +67,15 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS profile_cache (
+                session_id TEXT PRIMARY KEY,
+                profile_json TEXT NOT NULL,
+                fetched_at REAL NOT NULL
+            )
+            """
+        )
         # Added after the initial schema — migrate existing installs in place.
         if _add_column_if_missing(conn, "posts", "user_id", "TEXT"):
             _backfill_post_user_ids(conn)
@@ -214,6 +223,36 @@ def mark_checked(session_id: str, followed_user_id: str) -> None:
             "UPDATE poll_rotation SET last_checked_at = ? WHERE session_id = ? AND followed_user_id = ?",
             (time.time(), session_id, followed_user_id),
         )
+
+
+def get_cached_profile(session_id: str) -> Optional[dict[str, Any]]:
+    """Own profile, read from cache — populated on first view and refreshed
+    on-demand (see main.py's /profile), not by the background poller. Profile
+    fields change far less often than the feed, so unlike posts there's no
+    proactive rotation, just cache-until-asked-to-refresh."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT profile_json, fetched_at FROM profile_cache WHERE session_id = ?", (session_id,)
+        ).fetchone()
+    if row is None:
+        return None
+    profile = json.loads(row[0])
+    profile["fetched_at"] = row[1]
+    return profile
+
+
+def save_profile(session_id: str, profile: dict[str, Any]) -> dict[str, Any]:
+    fetched_at = time.time()
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO profile_cache (session_id, profile_json, fetched_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT (session_id) DO UPDATE SET profile_json = excluded.profile_json, fetched_at = excluded.fetched_at
+            """,
+            (session_id, json.dumps(profile), fetched_at),
+        )
+    return {**profile, "fetched_at": fetched_at}
 
 
 def get_setting(key: str, default: str) -> str:
