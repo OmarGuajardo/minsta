@@ -5,10 +5,11 @@ import { catchAuthError, requireSessionId } from "@/lib/require-session";
 import { FeedList } from "@/components/FeedList";
 import { RequestBudgetWidget } from "@/components/RequestBudgetWidget";
 
-const RANGE_OPTIONS = [
+const RANGE_OPTIONS: Array<{ key: string; label: string; days?: number }> = [
   { key: "1w", label: "1 week", days: 7 },
   { key: "2w", label: "2 weeks", days: 14 },
   { key: "1m", label: "1 month", days: 30 },
+  { key: "all", label: "All" },
 ];
 const DEFAULT_RANGE_KEY = "1w";
 
