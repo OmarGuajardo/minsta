@@ -116,16 +116,6 @@ async function instagrapiFetch<T>(path: string, options: InstagrapiFetchOptions 
 
 // --- Types matching the subset of instagrapi's pydantic models we use ---
 
-export interface Account {
-  pk: string;
-  username: string;
-  full_name: string;
-  is_private: boolean;
-  profile_pic_url: string;
-  is_verified: boolean;
-  biography?: string;
-}
-
 export interface UserShort {
   pk: string;
   username?: string;
@@ -134,20 +124,6 @@ export interface UserShort {
   profile_pic_url_hd?: string;
   is_private?: boolean;
   is_verified?: boolean;
-}
-
-export interface User {
-  pk: string;
-  username: string;
-  full_name: string;
-  is_private: boolean;
-  profile_pic_url: string;
-  profile_pic_url_hd?: string;
-  is_verified: boolean;
-  media_count: number;
-  follower_count: number;
-  following_count: number;
-  biography?: string;
 }
 
 export interface MediaResource {
@@ -211,18 +187,44 @@ export async function logout(sessionId: string): Promise<void> {
   await instagrapiFetch("/auth/logout", { method: "POST", sessionId });
 }
 
-export function getAccount(sessionId: string): Promise<Account> {
-  return instagrapiFetch<Account>("/account", { sessionId });
+export interface ProfileCache {
+  username: string;
+  full_name: string;
+  biography: string;
+  profile_pic_url: string;
+  follower_count: number;
+  following_count: number;
+  media_count: number;
+  fetched_at: number;
 }
 
-export function getUserByUsername(sessionId: string, username: string): Promise<User> {
-  return instagrapiFetch<User>(`/user/${encodeURIComponent(username)}`, { sessionId });
+/**
+ * Own profile, read from instagrapi-service's local cache rather than
+ * hitting Instagram live on every page view — profile fields change far
+ * less often than the feed, so this is a plain cache with a manual
+ * `forceRefresh`, not a background-polled rotation like /feed.
+ */
+export function getProfileCache(sessionId: string, forceRefresh = false): Promise<ProfileCache> {
+  return instagrapiFetch<ProfileCache>("/profile", { sessionId, searchParams: { force_refresh: forceRefresh } });
 }
 
 export function getUserPosts(sessionId: string, username: string, amount: number): Promise<{ items: Media[] }> {
   return instagrapiFetch<{ items: Media[] }>(`/user/${encodeURIComponent(username)}/posts`, {
     sessionId,
     searchParams: { amount },
+  });
+}
+
+/**
+ * Own posts (for the profile grid), read from instagrapi-service's local
+ * cache — same idea as getProfileCache, but for the posts grid instead of
+ * the header stats. `forceRefresh` forces a live refetch instead of serving
+ * the cached copy.
+ */
+export function getOwnPostsCache(sessionId: string, forceRefresh = false): Promise<{ items: FeedItem[] }> {
+  return instagrapiFetch<{ items: FeedItem[] }>("/profile/posts", {
+    sessionId,
+    searchParams: { force_refresh: forceRefresh },
   });
 }
 

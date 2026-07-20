@@ -1,4 +1,4 @@
-import { getAccount, getUserByUsername } from "@/lib/instagrapi";
+import { getProfileCache } from "@/lib/instagrapi";
 
 export interface Profile {
   username: string;
@@ -8,20 +8,25 @@ export interface Profile {
   followerCount: number;
   followingCount: number;
   mediaCount: number;
+  fetchedAt: number;
 }
 
-/** account_info only has identity fields; follower/following/media counts live on the user-by-username lookup. */
-export async function getMyProfile(sessionId: string): Promise<Profile> {
-  const account = await getAccount(sessionId);
-  const user = await getUserByUsername(sessionId, account.username);
+/**
+ * Own profile, read from instagrapi-service's local cache rather than
+ * hitting Instagram live on every page view. `forceRefresh` triggers an
+ * immediate on-demand refresh instead of serving the cached copy.
+ */
+export async function getMyProfile(sessionId: string, forceRefresh = false): Promise<Profile> {
+  const cached = await getProfileCache(sessionId, forceRefresh);
 
   return {
-    username: account.username,
-    fullName: account.full_name,
-    biography: account.biography ?? "",
-    profilePicUrl: user.profile_pic_url_hd ?? user.profile_pic_url ?? account.profile_pic_url,
-    followerCount: user.follower_count,
-    followingCount: user.following_count,
-    mediaCount: user.media_count,
+    username: cached.username,
+    fullName: cached.full_name,
+    biography: cached.biography,
+    profilePicUrl: cached.profile_pic_url,
+    followerCount: cached.follower_count,
+    followingCount: cached.following_count,
+    mediaCount: cached.media_count,
+    fetchedAt: cached.fetched_at,
   };
 }

@@ -218,6 +218,57 @@ def account(client_and_id: tuple = Depends(get_client)):
     return info
 
 
+@app.get("/profile")
+def profile(force_refresh: bool = False, client_and_id: tuple = Depends(get_client)):
+    """Own profile (identity fields + follower/following/media counts), read
+    from a local cache rather than hitting Instagram on every page view —
+    this data changes far less often than the feed, so a plain cache-until-
+    refreshed-manually is enough, no background rotation needed."""
+    cl, session_id = client_and_id
+
+    if not force_refresh:
+        cached = db.get_cached_profile(session_id)
+        if cached is not None:
+            return cached
+
+    request_budget.guard()
+    account_info = cl.account_info()
+    request_budget.guard()
+    user = cl.user_info_by_username(account_info.username)
+    persist(cl, session_id)
+
+    data = {
+        "username": account_info.username,
+        "full_name": account_info.full_name,
+        "biography": account_info.biography or "",
+        "profile_pic_url": str(user.profile_pic_url_hd or user.profile_pic_url or account_info.profile_pic_url),
+        "follower_count": user.follower_count,
+        "following_count": user.following_count,
+        "media_count": user.media_count,
+    }
+    return db.save_profile(session_id, data)
+
+
+@app.get("/profile/posts")
+def profile_posts(force_refresh: bool = False, client_and_id: tuple = Depends(get_client)):
+    """Own posts (for the profile grid), cached in the same `posts` table
+    /feed reads from, scoped to just this account's own user_id. A single
+    account's own timeline, not a rotating list, so no poller/background
+    involvement — cache-until-refreshed, same as /profile above."""
+    cl, session_id = client_and_id
+
+    if not force_refresh:
+        cached = db.get_posts(session_id, user_id=session_id)
+        if cached:
+            return {"items": cached}
+
+    request_budget.guard()
+    medias = cl.user_medias(cl.user_id, 0)
+    db.upsert_posts(session_id, [{"media": media, "user": media.user} for media in medias])
+    persist(cl, session_id)
+    return {"items": db.get_posts(session_id, user_id=session_id)}
+
+
 @app.get("/user/{username}")
 def user_by_username(username: str, client_and_id: tuple = Depends(get_client)):
     cl, session_id = client_and_id
