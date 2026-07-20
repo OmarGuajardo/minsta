@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { getRequestBudgetStatus, getRotationStatus } from "@/lib/instagrapi";
 import { catchAuthError, requireSessionId } from "@/lib/require-session";
 import { FollowedAccountsTable } from "@/components/FollowedAccountsTable";
@@ -22,20 +21,7 @@ export default async function HealthPage() {
 
   return (
     <main className="mx-auto flex max-w-4xl flex-col gap-8 p-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">System Health</h1>
-        <div className="flex items-center gap-2">
-          <Link href="/feed" className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15">
-            Feed
-          </Link>
-          <Link href="/profile" className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15">
-            Profile
-          </Link>
-          <Link href="/admin" className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15">
-            Admin
-          </Link>
-        </div>
-      </div>
+      <h1 className="text-2xl font-semibold">System Health</h1>
 
       <section className="flex flex-col gap-4">
         <h2 className="text-lg font-semibold">API requests</h2>

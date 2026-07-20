@@ -42,23 +42,12 @@ export default async function FeedPage({
     <main className="mx-auto flex max-w-xl flex-col gap-8 p-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Feed</h1>
-        <div className="flex items-center gap-2">
-          <Link
-            href={`/feed?range=${selectedOption.key}&refresh=1`}
-            className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15"
-          >
-            Refresh
-          </Link>
-          <Link href="/profile" className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15">
-            Profile
-          </Link>
-          <Link href="/health" className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15">
-            Health
-          </Link>
-          <Link href="/admin" className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15">
-            Admin
-          </Link>
-        </div>
+        <Link
+          href={`/feed?range=${selectedOption.key}&refresh=1`}
+          className="rounded-md border border-black/10 px-3 py-1.5 text-sm dark:border-white/15"
+        >
+          Refresh
+        </Link>
       </div>
 
       <RequestBudgetWidget />
