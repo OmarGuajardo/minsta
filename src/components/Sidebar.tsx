@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useRequestBudget } from "@/hooks/useRequestBudget";
+import { CircularGauge } from "@/components/CircularGauge";
 
 const NAV_ITEMS = [
   { href: "/feed", label: "Feed" },
@@ -12,6 +14,7 @@ const NAV_ITEMS = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const budget = useRequestBudget();
 
   return (
     <nav className="flex w-40 shrink-0 flex-col gap-1 border-r border-black/10 p-4 dark:border-white/15">
@@ -32,6 +35,13 @@ export function Sidebar() {
           </Link>
         );
       })}
+
+      {budget && (
+        <div className="mt-4 flex flex-col items-center gap-3 border-t border-black/10 pt-4 dark:border-white/15">
+          <CircularGauge label="Hour" used={budget.hour.used} limit={budget.hour.limit} />
+          <CircularGauge label="Day" used={budget.day.used} limit={budget.day.limit} />
+        </div>
+      )}
     </nav>
   );
 }
