@@ -325,23 +325,36 @@ def media_comments(media_id: str, amount: int = 10, client_and_id: tuple = Depen
     return {"items": comments}
 
 
+MAX_ALBUM_PHOTOS = 10
+
+
 @app.post("/media/publish_photo")
 async def publish_photo(
     caption: str = Form(""),
-    file: UploadFile = File(...),
+    files: list[UploadFile] = File(...),
     client_and_id: tuple = Depends(get_client),
 ):
+    """A single file publishes a normal photo post; 2+ files publish an
+    Instagram carousel (album) post — Instagram allows at most 10 items."""
     cl, session_id = client_and_id
-    suffix = os.path.splitext(file.filename or "upload.jpg")[1] or ".jpg"
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp.write(await file.read())
-        tmp_path = Path(tmp.name)
+    if not files:
+        raise HTTPException(status_code=400, detail="At least one photo is required.")
+    if len(files) > MAX_ALBUM_PHOTOS:
+        raise HTTPException(status_code=400, detail=f"Instagram allows at most {MAX_ALBUM_PHOTOS} photos per post.")
 
+    tmp_paths: list[Path] = []
     try:
+        for upload in files:
+            suffix = os.path.splitext(upload.filename or "upload.jpg")[1] or ".jpg"
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                tmp.write(await upload.read())
+                tmp_paths.append(Path(tmp.name))
+
         request_budget.guard()
-        media = cl.photo_upload(tmp_path, caption)
+        media = cl.photo_upload(tmp_paths[0], caption) if len(tmp_paths) == 1 else cl.album_upload(tmp_paths, caption)
     finally:
-        tmp_path.unlink(missing_ok=True)
+        for tmp_path in tmp_paths:
+            tmp_path.unlink(missing_ok=True)
 
     persist(cl, session_id)
     return media

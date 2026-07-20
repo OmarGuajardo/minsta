@@ -315,10 +315,13 @@ export function getMediaComments(sessionId: string, mediaId: string, amount = 10
   });
 }
 
-export async function publishPhoto(sessionId: string, file: File, caption: string): Promise<Media> {
+/** A single file publishes a normal photo post; 2+ files publish an Instagram carousel (album) post. */
+export async function publishPhoto(sessionId: string, files: File[], caption: string): Promise<Media> {
   const url = new URL("/media/publish_photo", baseUrl());
   const formData = new FormData();
-  formData.set("file", file);
+  for (const file of files) {
+    formData.append("files", file);
+  }
   formData.set("caption", caption);
 
   const res = await fetch(url, {
