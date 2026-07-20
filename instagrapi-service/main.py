@@ -249,6 +249,26 @@ def profile(force_refresh: bool = False, client_and_id: tuple = Depends(get_clie
     return db.save_profile(session_id, data)
 
 
+@app.get("/profile/posts")
+def profile_posts(force_refresh: bool = False, client_and_id: tuple = Depends(get_client)):
+    """Own posts (for the profile grid), cached in the same `posts` table
+    /feed reads from, scoped to just this account's own user_id. A single
+    account's own timeline, not a rotating list, so no poller/background
+    involvement — cache-until-refreshed, same as /profile above."""
+    cl, session_id = client_and_id
+
+    if not force_refresh:
+        cached = db.get_posts(session_id, user_id=session_id)
+        if cached:
+            return {"items": cached}
+
+    request_budget.guard()
+    medias = cl.user_medias(cl.user_id, 0)
+    db.upsert_posts(session_id, [{"media": media, "user": media.user} for media in medias])
+    persist(cl, session_id)
+    return {"items": db.get_posts(session_id, user_id=session_id)}
+
+
 @app.get("/user/{username}")
 def user_by_username(username: str, client_and_id: tuple = Depends(get_client)):
     cl, session_id = client_and_id

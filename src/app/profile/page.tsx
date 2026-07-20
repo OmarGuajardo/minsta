@@ -18,7 +18,7 @@ export default async function ProfilePage({
 
   const { profile, posts } = await withSession(async (sessionId) => {
     const profile = await getMyProfile(sessionId, forceRefresh);
-    const posts = await getAllMyPosts(sessionId, profile.username);
+    const posts = await getAllMyPosts(sessionId, forceRefresh);
     return { profile, posts };
   });
 

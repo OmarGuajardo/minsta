@@ -110,18 +110,21 @@ def upsert_posts(session_id: str, items: list[dict[str, Any]]) -> None:
         )
 
 
-def get_posts(session_id: str, since: Optional[float] = None) -> list[dict[str, Any]]:
+def get_posts(session_id: str, since: Optional[float] = None, user_id: Optional[str] = None) -> list[dict[str, Any]]:
+    """`user_id`, when given, scopes to a single account's posts — used to
+    read back just-your-own posts (see /profile/posts) from the same table
+    that /feed reads the whole followed-accounts timeline from."""
+    query = "SELECT media_json, user_json FROM posts WHERE session_id = ?"
+    params: list[Any] = [session_id]
+    if user_id is not None:
+        query += " AND user_id = ?"
+        params.append(user_id)
+    if since is not None:
+        query += " AND taken_at >= ?"
+        params.append(since)
+    query += " ORDER BY taken_at DESC"
     with _connect() as conn:
-        if since is not None:
-            rows = conn.execute(
-                "SELECT media_json, user_json FROM posts WHERE session_id = ? AND taken_at >= ? ORDER BY taken_at DESC",
-                (session_id, since),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT media_json, user_json FROM posts WHERE session_id = ? ORDER BY taken_at DESC",
-                (session_id,),
-            ).fetchall()
+        rows = conn.execute(query, params).fetchall()
     return [{"media": json.loads(media_json), "user": json.loads(user_json)} for media_json, user_json in rows]
 
 

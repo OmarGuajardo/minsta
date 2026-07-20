@@ -216,6 +216,19 @@ export function getUserPosts(sessionId: string, username: string, amount: number
 }
 
 /**
+ * Own posts (for the profile grid), read from instagrapi-service's local
+ * cache — same idea as getProfileCache, but for the posts grid instead of
+ * the header stats. `forceRefresh` forces a live refetch instead of serving
+ * the cached copy.
+ */
+export function getOwnPostsCache(sessionId: string, forceRefresh = false): Promise<{ items: FeedItem[] }> {
+  return instagrapiFetch<{ items: FeedItem[] }>("/profile/posts", {
+    sessionId,
+    searchParams: { force_refresh: forceRefresh },
+  });
+}
+
+/**
  * Feed of posts from followed accounts, read from instagrapi-service's local
  * database (kept up to date by its background poller) rather than scanning
  * Instagram live on every request. `days`, when given, filters to posts

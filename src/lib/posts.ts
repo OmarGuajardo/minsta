@@ -1,4 +1,4 @@
-import { getUserPosts } from "@/lib/instagrapi";
+import { getOwnPostsCache, getUserPosts } from "@/lib/instagrapi";
 import type { Media } from "@/lib/instagrapi";
 
 export interface Post {
@@ -22,8 +22,12 @@ export async function getMyPosts(sessionId: string, username: string, amount = 2
   return page.items.map(toPost);
 }
 
-/** Fetches every post on the account — instagrapi's amount=0 means "no limit", so no manual pagination loop is needed here. */
-export async function getAllMyPosts(sessionId: string, username: string): Promise<Post[]> {
-  const page = await getUserPosts(sessionId, username, 0);
-  return page.items.map(toPost);
+/**
+ * Every post on your own account, read from instagrapi-service's local
+ * cache rather than hitting Instagram on every /profile view. `forceRefresh`
+ * triggers an immediate live refetch instead of serving the cached copy.
+ */
+export async function getAllMyPosts(sessionId: string, forceRefresh = false): Promise<Post[]> {
+  const page = await getOwnPostsCache(sessionId, forceRefresh);
+  return page.items.map((item) => toPost(item.media));
 }
