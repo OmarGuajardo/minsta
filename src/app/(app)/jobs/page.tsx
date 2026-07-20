@@ -10,7 +10,7 @@ export default async function AdminPage() {
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-8 p-8">
-      <h1 className="text-2xl font-semibold">Admin</h1>
+      <h1 className="text-2xl font-semibold">Jobs</h1>
 
       <section className="flex flex-col gap-4">
         <h2 className="text-lg font-semibold">Background poller</h2>

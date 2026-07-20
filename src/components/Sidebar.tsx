@@ -9,7 +9,7 @@ const NAV_ITEMS = [
   { href: "/feed", label: "Feed" },
   { href: "/profile", label: "Profile" },
   { href: "/health", label: "Health" },
-  { href: "/admin", label: "Admin" },
+  { href: "/jobs", label: "Jobs" },
 ];
 
 export function Sidebar() {
