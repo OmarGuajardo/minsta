@@ -1,5 +1,5 @@
-const SIZE = 48;
-const STROKE_WIDTH = 4;
+const SIZE = 96;
+const STROKE_WIDTH = 7;
 const RADIUS = (SIZE - STROKE_WIDTH) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
@@ -30,8 +30,8 @@ export function CircularGauge({ label, used, limit }: { label: string; used: num
           className="stroke-foreground transition-[stroke-dashoffset] duration-500"
         />
       </svg>
-      <span className="text-[10px] font-medium">{label}</span>
-      <span className="text-[10px] text-black/60 dark:text-white/60">
+      <span className="text-sm font-medium">{label}</span>
+      <span className="text-xs text-black/60 dark:text-white/60">
         {used}/{limit}
       </span>
     </div>
