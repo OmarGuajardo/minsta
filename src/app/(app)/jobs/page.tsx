@@ -21,7 +21,7 @@ export default async function AdminPage() {
 
       <section className="flex flex-col gap-4">
         <h2 className="text-lg font-semibold">Global settings</h2>
-        <AdminSettingsForm initialSettings={status.settings} />
+        <AdminSettingsForm initialSettings={status.settings} closeFriends={status.close_friends} />
       </section>
     </main>
   );

@@ -42,7 +42,13 @@ const FIELDS: Array<{ key: keyof AdminSettings; label: string; min: number; help
   },
 ];
 
-export function AdminSettingsForm({ initialSettings }: { initialSettings: AdminSettings }) {
+export function AdminSettingsForm({
+  initialSettings,
+  closeFriends,
+}: {
+  initialSettings: AdminSettings;
+  closeFriends: string[];
+}) {
   const [values, setValues] = useState(initialSettings);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -78,6 +84,20 @@ export function AdminSettingsForm({ initialSettings }: { initialSettings: AdminS
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      {closeFriends.length > 0 && (
+        <div className="rounded-md border border-black/10 p-3 text-xs dark:border-white/15">
+          <p className="text-black/70 dark:text-white/70">
+            <span className="font-medium">
+              {closeFriends.length} close friend{closeFriends.length === 1 ? "" : "s"}:
+            </span>{" "}
+            {closeFriends.map((u) => `@${u}`).join(", ")}
+          </p>
+          <p className="mt-1 text-black/60 dark:text-white/60">
+            The poller only checks close friends once any are set — set &ldquo;Accounts per tick&rdquo; below to at
+            least {closeFriends.length} to cover all of them in a single run.
+          </p>
+        </div>
+      )}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {FIELDS.map((field) => (
           <div key={field.key} className="flex flex-col gap-1">

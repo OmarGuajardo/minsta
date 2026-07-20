@@ -125,6 +125,7 @@ def _admin_status() -> dict:
             "max_requests_per_day": request_budget.get_max_requests_per_day(),
         },
         "poller": poller.get_status(),
+        "close_friends": db.get_close_friend_usernames(session_id) if session_id else [],
         "last_run": db.get_last_poll_run(session_id) if session_id else None,
         "upcoming": {
             "usernames": upcoming_usernames,

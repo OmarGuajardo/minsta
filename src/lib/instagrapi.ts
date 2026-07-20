@@ -296,6 +296,7 @@ export interface PollRun {
 export interface AdminStatus {
   settings: AdminSettings;
   poller: { paused: boolean; tracked_sessions: number };
+  close_friends: string[];
   last_run: PollRun | null;
   upcoming: { usernames: string[]; estimated_requests: number };
 }

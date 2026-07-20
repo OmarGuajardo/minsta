@@ -230,6 +230,22 @@ def get_close_friend_accounts_to_poll(session_id: str, limit: int) -> list[dict[
     return [{"user_id": row[0], "username": row[1], "profile_pic_url": row[2]} for row in rows]
 
 
+def get_close_friend_usernames(session_id: str) -> list[str]:
+    """The full close-friends list (not capped to one tick's worth like
+    get_close_friend_accounts_to_poll) — for surfacing on /jobs next to the
+    settings that determine how many of them get checked per tick."""
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT username, followed_user_id FROM poll_rotation
+            WHERE session_id = ? AND is_close_friend = 1
+            ORDER BY username
+            """,
+            (session_id,),
+        ).fetchall()
+    return [row[0] or row[1] for row in rows]
+
+
 def get_rotation_status(session_id: str) -> list[dict[str, Any]]:
     """Every followed account the poller knows about for this session, and when it was last actually checked — least-recently-checked (most overdue) first."""
     latest_posts = get_latest_post_dates(session_id)
